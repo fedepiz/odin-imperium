@@ -323,100 +323,6 @@ Sprite :: struct {
 	bounds:  Rect,
 }
 
-Camera :: struct {
-	center:      [2]f32,
-	world_to_px: f32,
-	zoom:        f32,
-}
-
-Draw_Text_Alignment :: enum {
-	Center,
-	Left,
-	Top_Left,
-}
-
-Draw_Text_Wrapping :: enum {
-	Truncate,
-	Wrap,
-}
-
-Draw_Text :: struct {
-	text:         string,
-	color:        Color,
-	pixel_height: f32,
-	alignment:    Draw_Text_Alignment,
-	wrapping:     Draw_Text_Wrapping,
-}
-
-Draw_Border :: struct {
-	color:         Color_Rect,
-	thickness:     f32,
-	corner_radius: f32,
-}
-
-Draw_Texture_Mapping :: enum {
-	Stretch,
-	Tile,
-}
-
-Draw_Texture :: struct {
-	fill:      Color_Rect,
-	name:      string,
-	intensity: f32,
-	mapping:   Draw_Texture_Mapping,
-}
-
-Draw_Command :: struct {
-	bounds:  Rect,
-	clip:    Rect,
-	texture: Draw_Texture,
-	border:  Draw_Border,
-	text:    Draw_Text,
-}
-
-camera_screen_per_world_px :: proc(camera: Camera) -> f32 {
-	world_to_px := camera.world_to_px
-	if world_to_px <= 0 {
-		world_to_px = 1
-	}
-
-	zoom := camera.zoom
-	if zoom <= 0 {
-		zoom = 1
-	}
-
-	return world_to_px * zoom
-}
-
-camera_world_to_screen_pos :: proc(camera: Camera, pos, framebuffer_size: [2]f32) -> [2]f32 {
-	_ = framebuffer_size
-	screen_per_world_px := camera_screen_per_world_px(camera)
-	return {
-		(pos[0] - camera.center[0]) * screen_per_world_px,
-		(pos[1] - camera.center[1]) * screen_per_world_px,
-	}
-}
-
-camera_screen_to_world_pos :: proc(camera: Camera, pos, framebuffer_size: [2]f32) -> [2]f32 {
-	_ = framebuffer_size
-	screen_per_world_px := camera_screen_per_world_px(camera)
-	return {
-		camera.center[0] + pos[0]/screen_per_world_px,
-		camera.center[1] + pos[1]/screen_per_world_px,
-	}
-}
-
-camera_world_to_screen_rect :: proc(camera: Camera, rect: Rect, framebuffer_size: [2]f32) -> Rect {
-	pos := camera_world_to_screen_pos(camera, rect_corner(rect), framebuffer_size)
-	screen_per_world_px := camera_screen_per_world_px(camera)
-	return Rect{
-		x = pos[0],
-		y = pos[1],
-		w = rect.w * screen_per_world_px,
-		h = rect.h * screen_per_world_px,
-	}
-}
-
 Vertex :: struct {
 	xy:               [2]f32,
 	uv:               [2]f32,
@@ -786,8 +692,9 @@ terrain_init :: proc() {
 	GL.terrain_keys = load_texture_from_image(terrain_keys, .Neighbour)
 }
 
-init :: proc(allocator := context.allocator) {
+init :: proc(allocator: mem.Allocator) {
 	GL.allocator = allocator
+	GL.sprites = make([dynamic]Sprite, 0, 64, allocator) or_else panic("failed to allocate sprite registry")
 	GL.program = make_program(VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)
 
 	opengl.Enable(opengl.BLEND)
