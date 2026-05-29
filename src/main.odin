@@ -14,6 +14,7 @@ OPENGL_MINOR :: 3
 
 Platform_State :: struct {
 	mouse_pos:              [2]f64,
+	scroll_delta:           [2]f64,
 	keys_down_now:          [glfw.KEY_LAST + 1]bool,
 	keys_down_prev:         [glfw.KEY_LAST + 1]bool,
 	mouse_button_down_now:  [glfw.MOUSE_BUTTON_LAST + 1]bool,
@@ -23,6 +24,7 @@ Platform_State :: struct {
 Frame_Input :: struct {
 	mouse_pos:        [2]f32,
 	framebuffer_size: [2]f32,
+	scroll_delta:     [2]f32,
 	mouse_pressed:    bool,
 	mouse_clicked:    bool,
 	camera_dtranslate:[2]f32,
@@ -87,6 +89,11 @@ cursor_pos_callback :: proc "c" (window: glfw.WindowHandle, x: f64, y: f64) {
 	APP.mouse_pos = {x, y}
 }
 
+scroll_callback :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) {
+	_ = window
+	APP.scroll_delta += {xoffset, yoffset}
+}
+
 framebuffer_size :: proc(window: glfw.WindowHandle) -> [2]f32 {
 	width, height := glfw.GetFramebufferSize(window)
 	return {f32(width), f32(height)}
@@ -95,6 +102,7 @@ framebuffer_size :: proc(window: glfw.WindowHandle) -> [2]f32 {
 start_frame :: proc() {
 	APP.keys_down_prev = APP.keys_down_now
 	APP.mouse_button_down_prev = APP.mouse_button_down_now
+	APP.scroll_delta = {}
 	glfw.PollEvents()
 }
 
@@ -148,6 +156,7 @@ build_frame_input :: proc(window: glfw.WindowHandle, delta: f32) -> Frame_Input 
 	input := Frame_Input{
 		mouse_pos = {f32(APP.mouse_pos[0]), f32(APP.mouse_pos[1])},
 		framebuffer_size = framebuffer_size(window),
+		scroll_delta = {f32(APP.scroll_delta[0]), f32(APP.scroll_delta[1])},
 		mouse_pressed = is_mouse_button_down(glfw.MOUSE_BUTTON_LEFT),
 		mouse_clicked = is_mouse_button_pressed(glfw.MOUSE_BUTTON_LEFT),
 		delta = delta,
@@ -185,30 +194,6 @@ build_frame_input :: proc(window: glfw.WindowHandle, delta: f32) -> Frame_Input 
 	return input
 }
 
-append_button :: proc(commands: ^[dynamic]Draw_Command, bounds: Rect, label: string) {
-	append_or_panic(commands, Draw_Command{
-		bounds = bounds,
-		texture = Draw_Texture{
-			fill = color_rect_uniform(Color{0.93, 0.86, 0.72, 1}),
-			name = "widget",
-			intensity = 0.25,
-			mapping = .Tile,
-		},
-		border = Draw_Border{
-			color = color_rect_uniform(Color{0.36, 0.29, 0.21, 1}),
-			thickness = 4,
-			corner_radius = 8,
-		},
-		text = Draw_Text{
-			text = label,
-			color = BLACK,
-			pixel_height = 22,
-			alignment = .Center,
-			wrapping = .Truncate,
-		},
-	})
-}
-
 update_and_render :: proc(input: Frame_Input, allocator: mem.Allocator) -> Frame_Output {
 	if !SCENE.initialized {
 		SCENE.camera.world_to_px = 10
@@ -220,7 +205,6 @@ update_and_render :: proc(input: Frame_Input, allocator: mem.Allocator) -> Frame
 	camera_update(&SCENE.camera, input.camera_dtranslate, input.camera_dzoom, input.framebuffer_size)
 
 	board_draw_commands := make([dynamic]Draw_Command, 0, 4, allocator) or_else panic("failed to allocate board commands")
-	ui_draw_commands := make([dynamic]Draw_Command, 0, 8, allocator) or_else panic("failed to allocate ui commands")
 
 	append_or_panic(&board_draw_commands, Draw_Command{
 		bounds = Rect{300, 250, 1, 1},
@@ -232,35 +216,51 @@ update_and_render :: proc(input: Frame_Input, allocator: mem.Allocator) -> Frame
 		},
 	})
 
-	append_or_panic(&ui_draw_commands, Draw_Command{
-		bounds = Rect{24, 24, 340, 200},
-		texture = Draw_Texture{
-			fill = color_rect_uniform(Color{0.81, 0.73, 0.59, 1}),
-			name = "widget",
-			intensity = 0.25,
-			mapping = .Tile,
-		},
-		border = Draw_Border{
-			color = color_rect_uniform(Color{0.40, 0.32, 0.24, 1}),
-			thickness = 4,
-			corner_radius = 12,
-		},
-	})
+	ui_begin_frame(input)
 
-	append_or_panic(&ui_draw_commands, Draw_Command{
-		bounds = Rect{48, 42, 292, 42},
-		text = Draw_Text{
-			text = "Test Panel",
-			color = BLACK,
-			pixel_height = 28,
-			alignment = .Center,
-			wrapping = .Truncate,
-		},
-	})
+	ui_unit := f32(30)
+	ui_base_color := color_rgba8(207, 185, 151, 255)
+	ui_border := color_mix(ui_base_color, BLACK, 0.5)
 
-	append_button(&ui_draw_commands, Rect{48, 98, 132, 42}, "Hello")
-	append_button(&ui_draw_commands, Rect{206, 98, 132, 42}, "Bye")
-	append_button(&ui_draw_commands, Rect{48, 154, 290, 42}, "Goodbye")
+	ui_style_push_color(allocator, .Fill_Cold, ui_base_color)
+	ui_style_push_color(allocator, .Fill_Hover, color_rgba8(255, 0, 0, 255))
+	ui_style_push_color(allocator, .Fill_Held, color_rgba(0, 0.75, 0, 1))
+	ui_style_push_color(allocator, .Item_Border, ui_border)
+	ui_style_push_number(allocator, .Unit, ui_unit)
+	ui_style_push_color(allocator, .Text_Color, BLACK)
+	ui_style_push_number(allocator, .Text_Size, 26)
+	ui_style_push_number(allocator, .Heading_Size, 36)
+	ui_style_push_number(allocator, .Thickness, 4)
+	ui_style_push_color(allocator, .Panel_Fill, ui_base_color)
+	ui_style_push_color(allocator, .Panel_Border, ui_border)
+
+	{
+		_ = ui_panel_begin("###Panel", {0, 0})
+		ui_set_texture("widget", 0.25)
+		ui_heading("Test Panel", 11)
+		ui_vsep()
+		{
+			ui_row_begin()
+			ui_hsep()
+			_ = ui_button("Hello", 4)
+			ui_hsep()
+			_ = ui_button("Bye", 4)
+			ui_hsep()
+			ui_widget_end()
+		}
+		ui_space(0, 1)
+		{
+			ui_row_begin()
+			ui_hsep()
+			_ = ui_button("Goodbye", 4)
+			ui_hsep()
+			ui_widget_end()
+		}
+		ui_vsep()
+		ui_widget_end()
+	}
+
+	ui_draw_commands := ui_end_frame(allocator)
 
 	return Frame_Output{
 		camera = SCENE.camera,
@@ -300,6 +300,7 @@ main :: proc() {
 	glfw.SetKeyCallback(window, key_callback)
 	glfw.SetMouseButtonCallback(window, mouse_btn_callback)
 	glfw.SetCursorPosCallback(window, cursor_pos_callback)
+	glfw.SetScrollCallback(window, scroll_callback)
 
 	gl.load_up_to(OPENGL_MAJOR, OPENGL_MINOR, glfw.gl_set_proc_address)
 
@@ -308,6 +309,7 @@ main :: proc() {
 	fmt.printf("OpenGL %s\n", string(gl.GetString(gl.VERSION)))
 
 	init()
+	ui_init()
 	widget_texture := load_texture_from_file("assets/widget.png", .Linear)
 	push_sprite("widget", widget_texture, Rect{0, 0, widget_texture.size[0], widget_texture.size[1]})
 
