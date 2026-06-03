@@ -212,6 +212,8 @@ main :: proc() {
 	)
 
 	last_time := f32(glfw.GetTime())
+	fps_accum_time: f32
+	fps_accum_frames: int
 	for !glfw.WindowShouldClose(window) {
 		new_time := f32(glfw.GetTime())
 		delta := new_time - last_time
@@ -236,6 +238,16 @@ main :: proc() {
 		draw_commands(output.board_draw_commands, output.camera, fb_size)
 		draw_commands(output.ui_draw_commands, Camera{}, fb_size)
 		release_scratch(frame)
+
+		{
+			fps_accum_time += delta
+			fps_accum_frames += 1
+			if fps_accum_time >= 5 {
+				fmt.printf("Average FPS: %.1f\n", f32(fps_accum_frames) / fps_accum_time)
+				fps_accum_time = 0
+				fps_accum_frames = 0
+			}
+		}
 
 		end_frame(window)
 	}

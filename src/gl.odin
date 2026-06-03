@@ -988,8 +988,9 @@ interpret_game_draw_commands :: proc(
 	for cmd in draw_commands {
 		sprite := get_sprite_by_name(cmd.texture.name)
 		texture := sprite.texture
+		screen_bounds := camera_world_to_screen_rect(camera, cmd.bounds, framebuffer_size)
 		quad := Quad {
-			bounds        = camera_world_to_screen_rect(camera, cmd.bounds, framebuffer_size),
+			bounds        = screen_bounds,
 			clip          = cmd.clip,
 			fill          = cmd.texture.color,
 			tex_intensity = cmd.texture.intensity,
@@ -1015,7 +1016,7 @@ interpret_game_draw_commands :: proc(
 		draw_text_in_rect(
 			out,
 			cmd.text.text,
-			cmd.bounds,
+			screen_bounds,
 			.Center,
 			cmd.text.pixel_height,
 			cmd.text.color,

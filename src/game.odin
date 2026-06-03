@@ -223,36 +223,6 @@ game_build_ui :: proc(
 	return ui_is_mouse_over_area()
 }
 
-game_present :: proc(allocator: mem.Allocator, out: ^Frame_Output) -> []Click_Box {
-	commands: [dynamic]Draw_Command =
-		make([dynamic]Draw_Command, 0, 1, allocator) or_else panic(
-			"failed to allocate board commands",
-		)
-	click_boxes: [dynamic]Click_Box =
-		make([dynamic]Click_Box, 0, 1, allocator) or_else panic("failed to allocate click boxes")
-
-	bounds := Rect{300, 250, 1, 1}
-
-	append(
-		&commands,
-		Draw_Command {
-			bounds = bounds,
-			texture = Draw_Texture {
-				name = "soldier",
-				color = color_rect_uniform(WHITE),
-				intensity = 1,
-				mapping = .Stretch,
-			},
-		},
-	)
-
-	append(&click_boxes, Click_Box{bounds = bounds, id = 5})
-
-	out.board_draw_commands = commands[:]
-
-	return click_boxes[:]
-}
-
 update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame_Output {
 	if GAME.tick_num == 0 {
 		GAME.camera.zoom = 4
@@ -260,6 +230,13 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 
 	GAME.tick_num += 1
+
+	camera_update(
+		&GAME.camera,
+		input.camera.dtranslate,
+		input.camera.dzoom,
+		input.framebuffer_size,
+	)
 
 	tick_result: Tick_Output
 	{
@@ -280,16 +257,10 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		ctx.old_things = old_things.entries[:]
 		ctx.new_things = new_things.entries[:]
 		ctx.selected_id = GAME.selected_id
+		ctx.camera = GAME.camera
 
 		tick_result = things_tick(allocator, ctx)
 	}
-
-	camera_update(
-		&GAME.camera,
-		input.camera.dtranslate,
-		input.camera.dzoom,
-		input.framebuffer_size,
-	)
 
 	out: Frame_Output
 
@@ -345,12 +316,21 @@ thid_bump_generation :: proc(id: ThId) -> ThId {
 	return thid_make(parts.ix, parts.generation + 1)
 }
 
+Label :: enum {
+	Name,
+}
+
+Var :: enum {
+	Pos_X,
+	Pos_Y,
+	Size,
+}
+
 Thing :: struct {
 	id:     ThId,
-	name:   string,
 	sprite: string,
-	pos:    [2]f32,
-	size:   f32,
+	labels: [Label]string,
+	vars:   [Var]f32,
 }
 
 Things :: struct {
@@ -370,9 +350,11 @@ things_init :: proc(things: ^Things) {
 		thing := &things.entries[1]
 		// Marking this alive...
 		thing.id = thid_bump_generation(thing.id)
+		thing.labels[.Name] = "Ansoaldus"
 		thing.sprite = "soldier"
-		thing.pos = {300, 250}
-		thing.size = 1
+		thing.vars[.Pos_X] = 300
+		thing.vars[.Pos_Y] = 250
+		thing.vars[.Size] = 1
 	}
 }
 
@@ -382,6 +364,7 @@ Tick_Ctx :: struct {
 	old_things:  []Thing,
 	new_things:  []Thing,
 	selected_id: ThId,
+	camera:      Camera,
 }
 
 Tick_Output :: struct {
@@ -398,13 +381,16 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 		new := &ctx.new_things[ix]
 
 		new.id = old.id
-		new.name = strings.clone(old.name, ctx.alloc)
-		new.pos = old.pos
-		new.size = old.size
 		new.sprite = old.sprite
 
-		if len(new.name) != 0 do num_labels += 1
-		if new.size != 0 do num_visible += 1
+		// Assume most lables are copied most of the time
+		for label in Label {
+			new.labels[label] = strings.clone(old.labels[label], ctx.alloc)
+		}
+		new.vars = old.vars
+
+		if len(new.labels[.Name]) != 0 do num_labels += 1
+		if new.vars[.Size] != 0 do num_visible += 1
 	}
 
 	draw_commands: [dynamic]Draw_Command = make(
@@ -417,32 +403,59 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 
 	for ix in 1 ..< NUM_THINGS {
 		this := &ctx.new_things[ix]
-		if this.size <= 0 || len(this.sprite) == 0 {continue}
-
-		cmd: Draw_Command
-		cmd.bounds = {this.pos.x, this.pos.y, this.size, this.size}
-		cmd.texture.name = this.sprite
-		cmd.texture.color = color_rect_uniform(WHITE)
-		cmd.texture.intensity = 1
-
+		pos_x := this.vars[.Pos_X]
+		pos_y := this.vars[.Pos_Y]
+		size := this.vars[.Size]
+		if size <= 0 || len(this.sprite) == 0 {continue}
 		is_selected := this.id == ctx.selected_id
-		if is_selected {
-			cmd.border.color = color_rect_uniform(YELLOW)
-			cmd.border.thickness = 2
+
+		{
+			cmd: Draw_Command
+			cmd.bounds = {pos_x, pos_y, size, size}
+			cmd.texture.name = this.sprite
+			cmd.texture.color = color_rect_uniform(WHITE)
+			cmd.texture.intensity = 1
+
+			if is_selected {
+				cmd.border.color = color_rect_uniform(YELLOW)
+				cmd.border.thickness = 2
+			}
+
+			append(&draw_commands, cmd)
+
+			cb: Click_Box
+			cb.id = this.id
+			cb.bounds = cmd.bounds
+			append(&click_boxes, cb)
 		}
 
-		append(&draw_commands, cmd)
+		name := this.labels[.Name]
+		if len(name) != 0 {
+			// Draw label
+			label_pixel_height := f32(22)
+			label_padding_px := f32(4)
+			label_gap_px := f32(2)
+			world_per_screen_px := 1 / camera_screen_per_world_px(ctx.camera)
+			text_measure := measure_text(name, label_pixel_height)
+			label_w := (text_measure.size[0] + label_padding_px * 2) * world_per_screen_px
+			label_h := (text_measure.size[1] + label_padding_px * 2) * world_per_screen_px
+			label_x := pos_x + (size - label_w) * 0.5
+			label_y := pos_y + size + label_gap_px * world_per_screen_px
 
-		cb: Click_Box
-		cb.id = this.id
-		cb.bounds = cmd.bounds
-		append(&click_boxes, cb)
+			label_cmd: Draw_Command
+			label_cmd.bounds = {label_x, label_y, label_w, label_h}
+			label_cmd.texture.color = color_rect_uniform(color_rgba(0, 0, 0, 0.6))
+			label_cmd.text.text = name
+			label_cmd.text.color = WHITE
+			if is_selected {
+				label_cmd.text.color = YELLOW
+			}
+			label_cmd.text.pixel_height = label_pixel_height
+			label_cmd.text.alignment = .Center
+			label_cmd.text.wrapping = .Truncate
 
-		// TODO: if this.name is not empty, generate a label drawable.
-		// This is a drawable which consists of text with a background. The background is BLACK/transparent mix,
-		// the color of the text is white if !is_selcted, YELLOW if selected
-		// The drawable is to be rendered under the pawn, centered on the x axis so that the label's box is equal on
-		// both sides of the pawn
+			append(&draw_commands, label_cmd)
+		}
 	}
 
 	out: Tick_Output
