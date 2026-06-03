@@ -1,4 +1,7 @@
-Spawn,settlement,Caer Ligualid,celtic_town, 300, 255, 2
-Spawn,settlement,Anava,celtic_village, 304, 250, 2
-Spawn,party,Test,soldier, 310, 248, 1
-MarkDebug
+thing,ansoaldus
+sprite,soldier
+label,Name,Ansoaldus
+var,Pos_X,300
+var,Pos_Y,250
+var,Size,1
+flag,IsDebug
