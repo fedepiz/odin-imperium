@@ -3,12 +3,12 @@ package main
 import "core:mem"
 
 UI_MAX_WIDGETS :: 1024
-UI_NIL_KEY     :: u64(0)
-UI_AXIS_COUNT  :: 2
+UI_NIL_KEY :: u64(0)
+UI_AXIS_COUNT :: 2
 
 ui_Axis :: enum int {
-	X = 0,
-	Y = 1,
+	X     = 0,
+	Y     = 1,
 	Count = 2,
 }
 
@@ -112,22 +112,22 @@ ui_Scroll_State :: struct {
 }
 
 ui_Context :: struct {
-	widgets:            [UI_MAX_WIDGETS]ui_Widget,
-	widget_count:       int,
-	active_widget:      ^ui_Widget,
-	style:              ui_Style,
-	hovered:            ui_Widget_Key,
-	clicked:            ui_Widget_Key,
-	held:               ui_Widget_Key,
-	dragged:            ui_Widget_Key,
-	under_mouse:        [UI_MAX_WIDGETS]ui_Widget_Key,
-	under_mouse_count:  int,
-	has_mouse_over_area:bool,
-	scroll_delta:       [2]f32,
-	mouse_delta:        [2]f32,
-	old_mouse_pos:      [2]f32,
-	widget_cache:       [UI_MAX_WIDGETS]ui_Widget_Cache_Entry,
-	widget_cache_count: int,
+	widgets:             [UI_MAX_WIDGETS]ui_Widget,
+	widget_count:        int,
+	active_widget:       ^ui_Widget,
+	style:               ui_Style,
+	hovered:             ui_Widget_Key,
+	clicked:             ui_Widget_Key,
+	held:                ui_Widget_Key,
+	dragged:             ui_Widget_Key,
+	under_mouse:         [UI_MAX_WIDGETS]ui_Widget_Key,
+	under_mouse_count:   int,
+	has_mouse_over_area: bool,
+	scroll_delta:        [2]f32,
+	mouse_delta:         [2]f32,
+	old_mouse_pos:       [2]f32,
+	widget_cache:        [UI_MAX_WIDGETS]ui_Widget_Cache_Entry,
+	widget_cache_count:  int,
 }
 
 UI: ui_Context
@@ -137,14 +137,14 @@ color_rgba :: proc(r, g, b, a: f32) -> Color {
 }
 
 color_rgba8 :: proc(r, g, b, a: u8) -> Color {
-	return color_rgba(f32(r)/255, f32(g)/255, f32(b)/255, f32(a)/255)
+	return color_rgba(f32(r) / 255, f32(g) / 255, f32(b) / 255, f32(a) / 255)
 }
 
 color_mix :: proc(a, b: Color, t: f32) -> Color {
 	return {
-		r = a.r + (b.r-a.r)*t,
-		g = a.g + (b.g-a.g)*t,
-		b = a.b + (b.b-a.b)*t,
+		r = a.r + (b.r - a.r) * t,
+		g = a.g + (b.g - a.g) * t,
+		b = a.b + (b.b - a.b) * t,
 		a = a.a,
 	}
 }
@@ -166,9 +166,9 @@ color_rect_relief :: proc(base: Color, relief, light_strength, dark_strength: f3
 	light_amount := light_strength * amount
 	dark_amount := dark_strength * amount
 	light := color_mix(base, WHITE, light_amount)
-	soft_light := color_mix(base, WHITE, light_amount*0.6)
+	soft_light := color_mix(base, WHITE, light_amount * 0.6)
 	dark := color_mix(base, BLACK, dark_amount)
-	soft_dark := color_mix(base, BLACK, dark_amount*0.6)
+	soft_dark := color_mix(base, BLACK, dark_amount * 0.6)
 
 	if relief < 0 {
 		return color_rect_corners(dark, soft_dark, light, soft_light)
@@ -177,7 +177,12 @@ color_rect_relief :: proc(base: Color, relief, light_strength, dark_strength: f3
 }
 
 rect_contains_point :: proc(rect: Rect, point: [2]f32) -> bool {
-	return point[0] >= rect.x && point[1] >= rect.y && point[0] <= rect.x+rect.w && point[1] <= rect.y+rect.h
+	return(
+		point[0] >= rect.x &&
+		point[1] >= rect.y &&
+		point[0] <= rect.x + rect.w &&
+		point[1] <= rect.y + rect.h \
+	)
 }
 
 ui_rect_infinity :: proc() -> Rect {
@@ -187,9 +192,9 @@ ui_rect_infinity :: proc() -> Rect {
 ui_rect_intersection :: proc(a, b: Rect) -> Rect {
 	x0 := max(a.x, b.x)
 	y0 := max(a.y, b.y)
-	x1 := min(a.x+a.w, b.x+b.w)
-	y1 := min(a.y+a.h, b.y+b.h)
-	return {x0, y0, max(0, x1-x0), max(0, y1-y0)}
+	x1 := min(a.x + a.w, b.x + b.w)
+	y1 := min(a.y + a.h, b.y + b.h)
+	return {x0, y0, max(0, x1 - x0), max(0, y1 - y0)}
 }
 
 ui_widget_bounds :: proc(widget: ^ui_Widget) -> Rect {
@@ -208,14 +213,14 @@ ui_v2_axis :: proc(v: [2]f32, axis: ui_Axis) -> f32 {
 ui_widget_key_from_text :: proc(text: string) -> ui_Widget_Key {
 	key := ui_Widget_Key(0)
 	for ch in text {
-		key += key*13 + ui_Widget_Key(ch)*17
+		key += key * 13 + ui_Widget_Key(ch) * 17
 	}
 	return key
 }
 
 ui_visible_text :: proc(text: string) -> string {
-	for i := 0; i+1 < len(text); i += 1 {
-		if text[i] == '#' && text[i+1] == '#' {
+	for i := 0; i + 1 < len(text); i += 1 {
+		if text[i] == '#' && text[i + 1] == '#' {
 			return text[:i]
 		}
 	}
@@ -398,7 +403,7 @@ ui_draw_command_from_widget :: proc(widget: ^ui_Widget) -> Draw_Command {
 	command: Draw_Command
 	command.bounds = ui_widget_bounds(widget)
 	command.clip = widget.computed_clip
-	command.texture.fill = color_rect_relief(widget.fill, widget.relief, 0.45, 0.55)
+	command.texture.color = color_rect_relief(widget.fill, widget.relief, 0.45, 0.55)
 	command.texture.name = widget.texture_name
 	command.texture.intensity = widget.texture_intensity
 	command.texture.mapping = .Tile
@@ -486,7 +491,10 @@ ui_end_frame :: proc(allocator: mem.Allocator) -> []Draw_Command {
 	ui_update_widget_cache()
 	ui_layout_positions()
 
-	commands := make([dynamic]Draw_Command, 0, UI.widget_count, allocator) or_else panic("failed to allocate ui draw commands")
+	commands :=
+		make([dynamic]Draw_Command, 0, UI.widget_count, allocator) or_else panic(
+			"failed to allocate ui draw commands",
+		)
 	for i := 0; i < UI.widget_count; i += 1 {
 		widget := &UI.widgets[i]
 		if widget.parent == nil {
@@ -700,7 +708,7 @@ ui_col_begin :: proc() {
 ui_space :: proc(width, height: f32) {
 	ui_widget_begin()
 	unit := ui_style_number(.Unit)
-	ui_set_pixel_size(width*unit, height*unit)
+	ui_set_pixel_size(width * unit, height * unit)
 	ui_widget_end()
 }
 
@@ -715,7 +723,7 @@ ui_hsep :: proc() {
 ui_heading :: proc(text: string, width: f32) {
 	ui_widget_begin()
 	unit := ui_style_number(.Unit)
-	ui_set_pixel_size(width*unit, 2*unit)
+	ui_set_pixel_size(width * unit, 2 * unit)
 	ui_set_text(text, ui_style_number(.Heading_Size), .Center)
 	ui_widget_end()
 }
@@ -723,7 +731,7 @@ ui_heading :: proc(text: string, width: f32) {
 ui_label :: proc(text: string, width: f32) {
 	ui_widget_begin()
 	unit := ui_style_number(.Unit)
-	ui_set_pixel_size(width*unit, 2*unit)
+	ui_set_pixel_size(width * unit, 2 * unit)
 	ui_set_text(text, ui_style_number(.Text_Size), .Center)
 	ui_widget_end()
 }
@@ -731,7 +739,7 @@ ui_label :: proc(text: string, width: f32) {
 ui_line :: proc(text: string, width: f32) {
 	ui_widget_begin()
 	unit := ui_style_number(.Unit)
-	ui_set_pixel_size(width*unit, 2*unit)
+	ui_set_pixel_size(width * unit, 2 * unit)
 	ui_set_text(text, ui_style_number(.Text_Size), .Left)
 	ui_widget_end()
 }
@@ -739,7 +747,7 @@ ui_line :: proc(text: string, width: f32) {
 ui_multiline :: proc(text: string, width, height: f32) {
 	ui_widget_begin()
 	unit := ui_style_number(.Unit)
-	ui_set_pixel_size(width*unit, height*unit)
+	ui_set_pixel_size(width * unit, height * unit)
 	ui_set_text(text, ui_style_number(.Text_Size), .Wrap)
 	ui_widget_end()
 }
@@ -750,7 +758,7 @@ ui_button_generic :: proc(text: string, width, height: f32) -> bool {
 
 	unit := ui_style_number(.Unit)
 	height_px := height * unit
-	ui_set_pixel_size(width*unit, height_px)
+	ui_set_pixel_size(width * unit, height_px)
 
 	color_var := ui_Style_Var.Fill_Cold
 	if signal.held {
@@ -760,7 +768,7 @@ ui_button_generic :: proc(text: string, width, height: f32) -> bool {
 	}
 
 	ui_set_fill(ui_style_color(color_var))
-	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness), height_px*0.2)
+	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness), height_px * 0.2)
 	ui_set_relief(1)
 	if signal.held {
 		ui_set_relief(-1)
@@ -785,8 +793,12 @@ ui_toggle :: proc(key: string, value: bool, width, height: f32) -> bool {
 
 	ui_widget_begin()
 	signal := ui_set_key(key)
-	ui_set_pixel_size(width*unit, height_px)
-	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness)*0.5, height_px*0.05)
+	ui_set_pixel_size(width * unit, height_px)
+	ui_set_border(
+		ui_style_color(.Item_Border),
+		ui_style_number(.Thickness) * 0.5,
+		height_px * 0.05,
+	)
 
 	fill := ui_style_color(.Fill_Held)
 	if new_value {
@@ -823,12 +835,12 @@ ui_check_box :: proc(text: string, width: f32, value: bool) -> bool {
 	ui_box_begin(.X, true)
 	ui_set_fill(ui_style_color(.Fill_Cold))
 	ui_set_relief(1)
-	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness), height_px*0.2)
+	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness), height_px * 0.2)
 	ui_space(space1, 0)
 	new_value = ui_toggle(text, new_value, box_size, 1)
 	ui_space(space2, 0)
 	ui_widget_begin()
-	ui_set_pixel_size(text_width*unit, height_px)
+	ui_set_pixel_size(text_width * unit, height_px)
 	ui_set_text(text, ui_style_number(.Text_Size), .Left)
 	ui_widget_end()
 	ui_space(space3, 0)
@@ -862,7 +874,7 @@ ui_scroll_area_begin :: proc(id: string, width, height: f32, state: ^ui_Scroll_S
 	if state != nil {
 		cached := ui_widget_cache_lookup(id)
 		state.scroll -= signal.scroll[1] * unit
-		overflow := max(cached.content_size[1]-height_px, 0)
+		overflow := max(cached.content_size[1] - height_px, 0)
 		state.scroll = clamp(state.scroll, 0, overflow)
 		ui_set_child_offset(0, state.scroll)
 
@@ -885,17 +897,17 @@ ui_v_scroll_bar :: proc(width, height, percent_start, percent_end: f32) {
 	width_px := width * unit
 	height_px := height * unit
 	thumb_y := start * height_px
-	thumb_h := max((end-start)*height_px, 0)
+	thumb_h := max((end - start) * height_px, 0)
 
 	ui_widget_begin()
 	ui_set_pixel_size(width_px, height_px)
-	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness)*0.5, width_px*0.5)
+	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness) * 0.5, width_px * 0.5)
 
 	ui_widget_begin()
 	ui_set_pixel_size(width_px, thumb_h)
 	ui_set_absolute_offset(0, thumb_y)
 	ui_set_fill(ui_style_color(.Fill_Held))
-	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness)*0.25, width_px*0.5)
+	ui_set_border(ui_style_color(.Item_Border), ui_style_number(.Thickness) * 0.25, width_px * 0.5)
 	ui_widget_end()
 
 	ui_widget_end()

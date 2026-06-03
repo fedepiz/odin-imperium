@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:mem"
+import "core:strings"
 
 Camera :: struct {
 	center:      [2]f32,
@@ -55,7 +56,7 @@ Draw_Texture_Mapping :: enum {
 }
 
 Draw_Texture :: struct {
-	fill:      Color_Rect,
+	color:     Color_Rect,
 	name:      string,
 	intensity: f32,
 	mapping:   Draw_Texture_Mapping,
@@ -70,7 +71,7 @@ Draw_Command :: struct {
 }
 
 Click_Box :: struct {
-	id:     int,
+	id:     ThId,
 	bounds: Rect,
 }
 
@@ -81,8 +82,10 @@ Frame_Output :: struct {
 }
 
 Game_State :: struct {
-	camera:   Camera,
-	tick_num: u64,
+	camera:      Camera,
+	tick_num:    u64,
+	things:      [2]Things,
+	selected_id: ThId,
 }
 
 GAME: Game_State
@@ -236,7 +239,7 @@ game_present :: proc(allocator: mem.Allocator, out: ^Frame_Output) -> []Click_Bo
 			bounds = bounds,
 			texture = Draw_Texture {
 				name = "soldier",
-				fill = color_rect_uniform(WHITE),
+				color = color_rect_uniform(WHITE),
 				intensity = 1,
 				mapping = .Stretch,
 			},
@@ -257,6 +260,30 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 
 	GAME.tick_num += 1
+
+	tick_result: Tick_Output
+	{
+		// Tick here
+		new_things := &GAME.things[GAME.tick_num % 2]
+		old_things := &GAME.things[1 - GAME.tick_num % 2]
+
+		if GAME.tick_num == 1 {
+			things_init(old_things)
+		}
+
+		arena: mem.Arena
+		mem.arena_init(&arena, new_things.blob[:])
+
+		ctx: Tick_Ctx
+		ctx.tick_num = GAME.tick_num
+		ctx.alloc = mem.arena_allocator(&arena)
+		ctx.old_things = old_things.entries[:]
+		ctx.new_things = new_things.entries[:]
+		ctx.selected_id = GAME.selected_id
+
+		tick_result = things_tick(allocator, ctx)
+	}
+
 	camera_update(
 		&GAME.camera,
 		input.camera.dtranslate,
@@ -265,7 +292,8 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	)
 
 	out: Frame_Output
-	click_boxes := game_present(allocator, &out)
+
+	out.board_draw_commands = tick_result.draw_commands
 	mouse_over_ui := game_build_ui(allocator, &out, input)
 
 	// Handle on click
@@ -275,19 +303,150 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 			input.mouse_pos,
 			input.framebuffer_size,
 		)
-		picked_id: int
-		for pos in 1 ..= len(click_boxes) {
-			click_box := click_boxes[len(click_boxes) - pos]
+		picked_id: ThId
+		cbs := tick_result.click_boxes
+		for ix in 1 ..= len(cbs) {
+			click_box := cbs[len(cbs) - ix]
 			if rect_contains_point(click_box.bounds, mouse_pos) {
 				picked_id = click_box.id
 			}
 		}
-		if picked_id == 0 {
-			fmt.printf("Nothing picked\n")
-		} else {
-			fmt.printf("Picked id:%v\n", picked_id)
-		}
+		GAME.selected_id = picked_id
 	}
 	return out
 }
 
+THINGS_BLOB_SIZE :: 20_000_000
+
+NUM_THINGS :: 65000
+
+ThId :: distinct u32
+ThId_Parts :: struct {
+	ix:         u16,
+	generation: u16,
+}
+
+thid_make :: #force_inline proc(ix: u16, generation: u16) -> ThId {
+	return ThId(u32(ix) | u32(generation) << 16)
+}
+
+thid_parts :: #force_inline proc(id: ThId) -> ThId_Parts {
+	id := u32(id)
+	return {ix = u16(id), generation = u16(id >> 16)}
+}
+
+thid_is_valid :: #force_inline proc(id: ThId) -> bool {
+	parts := thid_parts(id)
+	return parts.ix != 0 && parts.generation % 2 == 1
+}
+
+thid_bump_generation :: proc(id: ThId) -> ThId {
+	parts := thid_parts(id)
+	return thid_make(parts.ix, parts.generation + 1)
+}
+
+Thing :: struct {
+	id:     ThId,
+	name:   string,
+	sprite: string,
+	pos:    [2]f32,
+	size:   f32,
+}
+
+Things :: struct {
+	blob:    [THINGS_BLOB_SIZE]byte,
+	entries: [NUM_THINGS]Thing,
+}
+
+things_init :: proc(things: ^Things) {
+	for ix in 0 ..< NUM_THINGS {
+		thing: Thing
+		thing.id = thid_make(u16(ix), 0)
+		things.entries[ix] = thing
+	}
+
+	// Create the first thing...just as an example
+	{
+		thing := &things.entries[1]
+		// Marking this alive...
+		thing.id = thid_bump_generation(thing.id)
+		thing.sprite = "soldier"
+		thing.pos = {300, 250}
+		thing.size = 1
+	}
+}
+
+Tick_Ctx :: struct {
+	tick_num:    u64,
+	alloc:       mem.Allocator,
+	old_things:  []Thing,
+	new_things:  []Thing,
+	selected_id: ThId,
+}
+
+Tick_Output :: struct {
+	draw_commands: []Draw_Command,
+	click_boxes:   []Click_Box,
+}
+
+things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
+	// "Write pass"
+	num_visible := 0
+	num_labels := 0
+	for ix in 1 ..< NUM_THINGS {
+		old := ctx.old_things[ix]
+		new := &ctx.new_things[ix]
+
+		new.id = old.id
+		new.name = strings.clone(old.name, ctx.alloc)
+		new.pos = old.pos
+		new.size = old.size
+		new.sprite = old.sprite
+
+		if len(new.name) != 0 do num_labels += 1
+		if new.size != 0 do num_visible += 1
+	}
+
+	draw_commands: [dynamic]Draw_Command = make(
+		[dynamic]Draw_Command,
+		0,
+		num_visible + num_labels,
+		arena,
+	)
+	click_boxes: [dynamic]Click_Box = make([dynamic]Click_Box, 0, num_visible, arena)
+
+	for ix in 1 ..< NUM_THINGS {
+		this := &ctx.new_things[ix]
+		if this.size <= 0 || len(this.sprite) == 0 {continue}
+
+		cmd: Draw_Command
+		cmd.bounds = {this.pos.x, this.pos.y, this.size, this.size}
+		cmd.texture.name = this.sprite
+		cmd.texture.color = color_rect_uniform(WHITE)
+		cmd.texture.intensity = 1
+
+		is_selected := this.id == ctx.selected_id
+		if is_selected {
+			cmd.border.color = color_rect_uniform(YELLOW)
+			cmd.border.thickness = 2
+		}
+
+		append(&draw_commands, cmd)
+
+		cb: Click_Box
+		cb.id = this.id
+		cb.bounds = cmd.bounds
+		append(&click_boxes, cb)
+
+		// TODO: if this.name is not empty, generate a label drawable.
+		// This is a drawable which consists of text with a background. The background is BLACK/transparent mix,
+		// the color of the text is white if !is_selcted, YELLOW if selected
+		// The drawable is to be rendered under the pawn, centered on the x axis so that the label's box is equal on
+		// both sides of the pawn
+	}
+
+	out: Tick_Output
+	out.draw_commands = draw_commands[:]
+	out.click_boxes = click_boxes[:]
+	return out
+}

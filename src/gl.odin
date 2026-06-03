@@ -31,6 +31,10 @@ Color_Rect :: struct {
 
 WHITE :: Color{1, 1, 1, 1}
 BLACK :: Color{0, 0, 0, 1}
+RED :: Color{1, 0, 0, 1}
+GREEN :: Color{0, 1, 0, 1}
+BLUE :: Color{0, 0, 1, 1}
+YELLOW :: Color{1, 1, 0, 1}
 TRANSPARENT :: Color{0, 0, 0, 0}
 
 rect_corner :: proc(rect: Rect) -> [2]f32 {
@@ -987,7 +991,7 @@ interpret_game_draw_commands :: proc(
 		quad := Quad {
 			bounds        = camera_world_to_screen_rect(camera, cmd.bounds, framebuffer_size),
 			clip          = cmd.clip,
-			fill          = cmd.texture.fill,
+			fill          = cmd.texture.color,
 			tex_intensity = cmd.texture.intensity,
 			texture       = texture,
 			stroke        = cmd.border.color,
@@ -1125,4 +1129,3 @@ get_sprite_by_name :: proc(name: string) -> Sprite {
 	}
 	return {}
 }
-
