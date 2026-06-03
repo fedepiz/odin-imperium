@@ -4,7 +4,6 @@ import c "core:c"
 import encoding_csv "core:encoding/csv"
 import "core:fmt"
 import "core:mem"
-import vmem "core:mem/virtual"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -13,10 +12,10 @@ import stbi "vendor:stb/image"
 import stbtt "vendor:stb/truetype"
 
 DEFAULT_SCRATCH_ARENA_CAPACITY :: mem.Megabyte
-NUM_SCRATCH_ARENAS             :: 2
-DEFAULT_MAX_GL_QUADS           :: 1024
-VERTEX_SHADER_PATH             :: "src/shader.vert"
-FRAGMENT_SHADER_PATH           :: "src/shader.frag"
+NUM_SCRATCH_ARENAS :: 2
+DEFAULT_MAX_GL_QUADS :: 1024
+VERTEX_SHADER_PATH :: "src/shader.vert"
+FRAGMENT_SHADER_PATH :: "src/shader.frag"
 
 Rect :: struct {
 	x, y, w, h: f32,
@@ -30,8 +29,8 @@ Color_Rect :: struct {
 	corners: [4]Color,
 }
 
-WHITE       :: Color{1, 1, 1, 1}
-BLACK       :: Color{0, 0, 0, 1}
+WHITE :: Color{1, 1, 1, 1}
+BLACK :: Color{0, 0, 0, 1}
 TRANSPARENT :: Color{0, 0, 0, 0}
 
 rect_corner :: proc(rect: Rect) -> [2]f32 {
@@ -44,67 +43,6 @@ rect_size :: proc(rect: Rect) -> [2]f32 {
 
 color_rect_uniform :: proc(color: Color) -> Color_Rect {
 	return Color_Rect{corners = [4]Color{color, color, color, color}}
-}
-
-Scratch_Arena_State :: struct {
-	arena:       vmem.Arena,
-	allocator:   mem.Allocator,
-	initialized: bool,
-}
-
-Arena_Temp :: struct {
-	arena:    mem.Allocator,
-	_backing: ^vmem.Arena,
-	_temp:    vmem.Arena_Temp,
-}
-
-@(thread_local)
-scratch_arenas: [NUM_SCRATCH_ARENAS]Scratch_Arena_State
-
-ensure_scratch_arena :: proc(idx: int) {
-	if scratch_arenas[idx].initialized {
-		return
-	}
-
-	err := vmem.arena_init_growing(&scratch_arenas[idx].arena, DEFAULT_SCRATCH_ARENA_CAPACITY)
-	if err != nil {
-		panic("failed to initialize scratch arena")
-	}
-
-	scratch_arenas[idx].allocator = vmem.arena_allocator(&scratch_arenas[idx].arena)
-	scratch_arenas[idx].initialized = true
-}
-
-allocator_conflicts :: proc(a, b: mem.Allocator) -> bool {
-	return a.data == b.data
-}
-
-get_scratch :: proc(conflicts: ..mem.Allocator) -> Arena_Temp {
-	for idx := 0; idx < NUM_SCRATCH_ARENAS; idx += 1 {
-		ensure_scratch_arena(idx)
-
-		has_conflict := false
-		for conflict in conflicts {
-			if allocator_conflicts(conflict, scratch_arenas[idx].allocator) {
-				has_conflict = true
-				break
-			}
-		}
-
-		if !has_conflict {
-			return Arena_Temp{
-				arena = scratch_arenas[idx].allocator,
-				_backing = &scratch_arenas[idx].arena,
-				_temp = vmem.arena_temp_begin(&scratch_arenas[idx].arena),
-			}
-		}
-	}
-
-	panic("no scratch arena available")
-}
-
-release_scratch :: proc(temp: Arena_Temp) {
-	vmem.arena_temp_end(temp._temp)
 }
 
 append_or_panic :: proc(array: ^[dynamic]$T, values: ..T) {
@@ -154,8 +92,8 @@ load_csv_records :: proc(path: string, allocator: mem.Allocator) -> ([][]string,
 	}
 
 	for i := 0; i < len(records); i += 1 {
-		for len(records[i]) > 0 && records[i][len(records[i])-1] == "" {
-			records[i] = records[i][:len(records[i])-1]
+		for len(records[i]) > 0 && records[i][len(records[i]) - 1] == "" {
+			records[i] = records[i][:len(records[i]) - 1]
 		}
 	}
 
@@ -175,8 +113,8 @@ Named_Image :: struct {
 }
 
 APP_Image_Atlas :: struct {
-	image:        APP_Image,
-	region_names: []string,
+	image:         APP_Image,
+	region_names:  []string,
 	region_bounds: []Rect,
 }
 
@@ -186,11 +124,7 @@ app_image_empty :: proc(allocator: mem.Allocator, width, height: int) -> APP_Ima
 		panic("failed to allocate image pixels")
 	}
 
-	return APP_Image{
-		pixels = pixels,
-		width = width,
-		height = height,
-	}
+	return APP_Image{pixels = pixels, width = width, height = height}
 }
 
 app_image_load_from_file :: proc(path: string) -> APP_Image {
@@ -205,7 +139,14 @@ app_image_load_from_file :: proc(path: string) -> APP_Image {
 
 	width, height, channels: c.int
 	_ = channels
-	pixels := stbi.load_from_memory(raw_data(bytes), c.int(len(bytes)), &width, &height, &channels, 4)
+	pixels := stbi.load_from_memory(
+		raw_data(bytes),
+		c.int(len(bytes)),
+		&width,
+		&height,
+		&channels,
+		4,
+	)
 	if pixels == nil {
 		fmt.eprintf("failed to decode image %s: %s\n", path, string(stbi.failure_reason()))
 		return {}
@@ -213,7 +154,7 @@ app_image_load_from_file :: proc(path: string) -> APP_Image {
 
 	pixel_count := int(width) * int(height) * 4
 
-	return APP_Image{
+	return APP_Image {
 		pixels = ([^]u8)(pixels)[:pixel_count],
 		width = int(width),
 		height = int(height),
@@ -227,7 +168,11 @@ app_image_destroy :: proc(image: APP_Image) {
 	}
 }
 
-app_image_atlas_make :: proc(allocator: mem.Allocator, images: []Named_Image, padding: int) -> APP_Image_Atlas {
+app_image_atlas_make :: proc(
+	allocator: mem.Allocator,
+	images: []Named_Image,
+	padding: int,
+) -> APP_Image_Atlas {
 	region_names, err := make([]string, len(images), allocator)
 	if err != nil {
 		panic("failed to allocate atlas names")
@@ -251,7 +196,7 @@ app_image_atlas_make :: proc(allocator: mem.Allocator, images: []Named_Image, pa
 	for atlas_width < max_width {
 		atlas_width *= 2
 	}
-	for atlas_width*atlas_width < total_area {
+	for atlas_width * atlas_width < total_area {
 		atlas_width *= 2
 	}
 
@@ -267,13 +212,13 @@ app_image_atlas_make :: proc(allocator: mem.Allocator, images: []Named_Image, pa
 			continue
 		}
 
-		if x > 0 && x+image.width > atlas_width {
+		if x > 0 && x + image.width > atlas_width {
 			x = 0
 			y += row_height + padding
 			row_height = 0
 		}
 
-		region_bounds[idx] = Rect{
+		region_bounds[idx] = Rect {
 			x = f32(x),
 			y = f32(y),
 			w = f32(image.width),
@@ -282,7 +227,7 @@ app_image_atlas_make :: proc(allocator: mem.Allocator, images: []Named_Image, pa
 
 		x += image.width + padding
 		row_height = max(row_height, image.height)
-		atlas_height = max(atlas_height, y+image.height)
+		atlas_height = max(atlas_height, y + image.height)
 	}
 
 	atlas := app_image_empty(allocator, atlas_width, atlas_height)
@@ -296,11 +241,14 @@ app_image_atlas_make :: proc(allocator: mem.Allocator, images: []Named_Image, pa
 		for src_y := 0; src_y < image.height; src_y += 1 {
 			src_start := src_y * image.width * 4
 			dst_start := ((int(bounds.y) + src_y) * atlas.width + int(bounds.x)) * 4
-			copy(atlas.pixels[dst_start:][:image.width*4], image.pixels[src_start:][:image.width*4])
+			copy(
+				atlas.pixels[dst_start:][:image.width * 4],
+				image.pixels[src_start:][:image.width * 4],
+			)
 		}
 	}
 
-	return APP_Image_Atlas{
+	return APP_Image_Atlas {
 		image = atlas,
 		region_names = region_names,
 		region_bounds = region_bounds,
@@ -338,15 +286,15 @@ Vertex :: struct {
 }
 
 Quad :: struct {
-	bounds:       Rect,
-	clip:         Rect,
-	st_bounds:    Rect,
-	fill:         Color_Rect,
-	texture:      Texture,
+	bounds:        Rect,
+	clip:          Rect,
+	st_bounds:     Rect,
+	fill:          Color_Rect,
+	texture:       Texture,
 	tex_intensity: f32,
-	stroke:       Color_Rect,
-	radius_px:    f32,
-	thickness_px: f32,
+	stroke:        Color_Rect,
+	radius_px:     f32,
+	thickness_px:  f32,
 }
 
 Quad_Batch :: struct {
@@ -398,8 +346,8 @@ screen_to_ndc :: proc(bounds: Rect, fb_size: [2]f32) -> Rect {
 		return {}
 	}
 
-	x0 := (bounds.x/fb_size[0])*2 - 1
-	y0 := 1 - (bounds.y/fb_size[1])*2
+	x0 := (bounds.x / fb_size[0]) * 2 - 1
+	y0 := 1 - (bounds.y / fb_size[1]) * 2
 	w := (bounds.w / fb_size[0]) * 2
 	h := -(bounds.h / fb_size[1]) * 2
 
@@ -418,16 +366,16 @@ vertex_array_push_quad :: proc(vertices: ^[dynamic]Vertex, quad: Quad, fb_size: 
 			st += winding * rect_size(quad.st_bounds)
 		}
 
-		vertex := Vertex{
-			frag_size_px = rect_size(quad.bounds),
-			xy = rect_corner(ndc_bounds) + winding * ndc_size,
-			uv = winding,
-			st = st,
-			col = quad.fill.corners[i],
+		vertex := Vertex {
+			frag_size_px  = rect_size(quad.bounds),
+			xy            = rect_corner(ndc_bounds) + winding * ndc_size,
+			uv            = winding,
+			st            = st,
+			col           = quad.fill.corners[i],
 			tex_intensity = quad.tex_intensity,
-			stroke = quad.stroke.corners[i],
-			radius_px = quad.radius_px,
-			thickness_px = quad.thickness_px,
+			stroke        = quad.stroke.corners[i],
+			radius_px     = quad.radius_px,
+			thickness_px  = quad.thickness_px,
 		}
 
 		append_or_panic(vertices, vertex)
@@ -439,7 +387,10 @@ quad_batch_calculate :: proc(quads: []Quad, allocator: mem.Allocator) -> []Quad_
 		return nil
 	}
 
-	batches := make([dynamic]Quad_Batch, 0, len(quads), allocator) or_else panic("failed to allocate quad batches")
+	batches :=
+		make([dynamic]Quad_Batch, 0, len(quads), allocator) or_else panic(
+			"failed to allocate quad batches",
+		)
 	start := 0
 
 	for i := 1; i < len(quads); i += 1 {
@@ -454,7 +405,9 @@ quad_batch_calculate :: proc(quads: []Quad, allocator: mem.Allocator) -> []Quad_
 }
 
 load_texture_from_image :: proc(image: APP_Image, filter: Texture_Filter) -> Texture {
-	texture := Texture{size = {f32(image.width), f32(image.height)}}
+	texture := Texture {
+		size = {f32(image.width), f32(image.height)},
+	}
 	if image.width <= 0 || image.height <= 0 || len(image.pixels) == 0 {
 		return texture
 	}
@@ -508,12 +461,12 @@ load_font :: proc(path: string) -> Font_Data {
 		return out
 	}
 
-	atlas_pixels, atlas_err := make([]u8, atlas_w*atlas_h, scratch.arena)
+	atlas_pixels, atlas_err := make([]u8, atlas_w * atlas_h, scratch.arena)
 	if atlas_err != nil {
 		panic("failed to allocate font atlas")
 	}
 
-	rgba_pixels, rgba_err := make([]u8, atlas_w*atlas_h*4, scratch.arena)
+	rgba_pixels, rgba_err := make([]u8, atlas_w * atlas_h * 4, scratch.arena)
 	if rgba_err != nil {
 		panic("failed to allocate font rgba atlas")
 	}
@@ -534,14 +487,18 @@ load_font :: proc(path: string) -> Font_Data {
 		return out
 	}
 
-	for i := 0; i < atlas_w*atlas_h; i += 1 {
-		rgba_pixels[i*4+0] = 255
-		rgba_pixels[i*4+1] = 255
-		rgba_pixels[i*4+2] = 255
-		rgba_pixels[i*4+3] = atlas_pixels[i]
+	for i := 0; i < atlas_w * atlas_h; i += 1 {
+		rgba_pixels[i * 4 + 0] = 255
+		rgba_pixels[i * 4 + 1] = 255
+		rgba_pixels[i * 4 + 2] = 255
+		rgba_pixels[i * 4 + 3] = atlas_pixels[i]
 	}
 
-	image := APP_Image{pixels = rgba_pixels, width = atlas_w, height = atlas_h}
+	image := APP_Image {
+		pixels = rgba_pixels,
+		width  = atlas_w,
+		height = atlas_h,
+	}
 	out.texture = load_texture_from_image(image, .Linear)
 	out.min_glyph = min_glyph
 	out.num_glyphs = num_glyphs
@@ -562,7 +519,10 @@ compile_shader :: proc(kind: u32, path: string) -> u32 {
 	}
 
 	source_text := string(source_bytes)
-	source_cstr := strings.clone_to_cstring(source_text, scratch.arena) or_else panic("failed to clone shader source")
+	source_cstr :=
+		strings.clone_to_cstring(source_text, scratch.arena) or_else panic(
+			"failed to clone shader source",
+		)
 	sources := [1]cstring{source_cstr}
 	lengths := [1]i32{i32(len(source_text))}
 
@@ -620,7 +580,8 @@ make_program :: proc(vertex_path, fragment_path: string) -> u32 {
 uniform_location :: proc(program: u32, name: string) -> i32 {
 	scratch := get_scratch()
 	defer release_scratch(scratch)
-	cname := strings.clone_to_cstring(name, scratch.arena) or_else panic("failed to clone uniform name")
+	cname :=
+		strings.clone_to_cstring(name, scratch.arena) or_else panic("failed to clone uniform name")
 	return opengl.GetUniformLocation(program, cname)
 }
 
@@ -646,19 +607,25 @@ terrain_init :: proc() {
 		return
 	}
 
-	terrain_types := make([dynamic]Terrain_Type, 0, len(records), scratch.arena) or_else panic("failed to allocate terrain types")
+	terrain_types :=
+		make([dynamic]Terrain_Type, 0, len(records), scratch.arena) or_else panic(
+			"failed to allocate terrain types",
+		)
 	for row in records {
 		if len(row) < 5 {
 			continue
 		}
 
-		append_or_panic(&terrain_types, Terrain_Type{
-			name = row[0],
-			movement_speed = parse_f32_or_zero(row[1]),
-			tile_x = parse_u8_or_zero(row[2]),
-			tile_y = parse_u8_or_zero(row[3]),
-			elevation = parse_f32_or_zero(row[4]),
-		})
+		append_or_panic(
+			&terrain_types,
+			Terrain_Type {
+				name = row[0],
+				movement_speed = parse_f32_or_zero(row[1]),
+				tile_x = parse_u8_or_zero(row[2]),
+				tile_y = parse_u8_or_zero(row[3]),
+				elevation = parse_f32_or_zero(row[4]),
+			},
+		)
 	}
 
 	heightmap := app_image_load_from_file("assets/britain.png")
@@ -670,7 +637,7 @@ terrain_init :: proc() {
 	terrain_keys := app_image_empty(scratch.arena, heightmap.width, heightmap.height)
 	for y := 0; y < heightmap.height; y += 1 {
 		for x := 0; x < heightmap.width; x += 1 {
-			pixel_idx := (y*heightmap.width + x) * 4
+			pixel_idx := (y * heightmap.width + x) * 4
 			height := f32(heightmap.pixels[pixel_idx]) / 255.0
 
 			terrain_id := 0
@@ -682,10 +649,10 @@ terrain_init :: proc() {
 			}
 
 			tt := terrain_types[terrain_id]
-			terrain_keys.pixels[pixel_idx+0] = tt.tile_x
-			terrain_keys.pixels[pixel_idx+1] = tt.tile_y
-			terrain_keys.pixels[pixel_idx+2] = 0
-			terrain_keys.pixels[pixel_idx+3] = 255
+			terrain_keys.pixels[pixel_idx + 0] = tt.tile_x
+			terrain_keys.pixels[pixel_idx + 1] = tt.tile_y
+			terrain_keys.pixels[pixel_idx + 2] = 0
+			terrain_keys.pixels[pixel_idx + 3] = 255
 		}
 	}
 
@@ -694,7 +661,8 @@ terrain_init :: proc() {
 
 init :: proc(allocator: mem.Allocator) {
 	GL.allocator = allocator
-	GL.sprites = make([dynamic]Sprite, 0, 64, allocator) or_else panic("failed to allocate sprite registry")
+	GL.sprites =
+		make([dynamic]Sprite, 0, 64, allocator) or_else panic("failed to allocate sprite registry")
 	GL.program = make_program(VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)
 
 	opengl.Enable(opengl.BLEND)
@@ -707,7 +675,11 @@ init :: proc(allocator: mem.Allocator) {
 
 	{
 		white_pixel := [4]u8{255, 255, 255, 255}
-		image := APP_Image{pixels = white_pixel[:], width = 1, height = 1}
+		image := APP_Image {
+			pixels = white_pixel[:],
+			width  = 1,
+			height = 1,
+		}
 		GL.default_texture = load_texture_from_image(image, .Neighbour)
 	}
 
@@ -721,12 +693,18 @@ init :: proc(allocator: mem.Allocator) {
 
 		records, ok := load_csv_records("data/pawn_sprites.csv", scratch.arena)
 		if ok {
-			images := make([dynamic]Named_Image, 0, len(records), scratch.arena) or_else panic("failed to allocate sprite images")
+			images :=
+				make([dynamic]Named_Image, 0, len(records), scratch.arena) or_else panic(
+					"failed to allocate sprite images",
+				)
 			for row in records {
 				if len(row) < 2 {
 					continue
 				}
-				append_or_panic(&images, Named_Image{name = row[0], image = app_image_load_from_file(row[1])})
+				append_or_panic(
+					&images,
+					Named_Image{name = row[0], image = app_image_load_from_file(row[1])},
+				)
 			}
 
 			atlas := app_image_atlas_make(scratch.arena, images[:], 4)
@@ -783,12 +761,12 @@ draw_call :: proc(vertices: []Vertex, mode: Shader_Mode, texture: Texture) {
 	for quad_index := 0; quad_index < quad_count; quad_index += 1 {
 		base := u32(quad_index * 4)
 		index_offset := quad_index * 6
-		indices[index_offset+0] = base + 0
-		indices[index_offset+1] = base + 1
-		indices[index_offset+2] = base + 2
-		indices[index_offset+3] = base + 0
-		indices[index_offset+4] = base + 2
-		indices[index_offset+5] = base + 3
+		indices[index_offset + 0] = base + 0
+		indices[index_offset + 1] = base + 1
+		indices[index_offset + 2] = base + 2
+		indices[index_offset + 3] = base + 0
+		indices[index_offset + 4] = base + 2
+		indices[index_offset + 5] = base + 3
 	}
 
 	opengl.UseProgram(GL.program)
@@ -814,8 +792,18 @@ draw_call :: proc(vertices: []Vertex, mode: Shader_Mode, texture: Texture) {
 	opengl.BindBuffer(opengl.ARRAY_BUFFER, GL.vbo)
 	opengl.BindBuffer(opengl.ELEMENT_ARRAY_BUFFER, GL.ebo)
 
-	opengl.BufferData(opengl.ARRAY_BUFFER, len(vertices)*size_of(Vertex), raw_data(vertices), opengl.DYNAMIC_DRAW)
-	opengl.BufferData(opengl.ELEMENT_ARRAY_BUFFER, len(indices)*size_of(u32), raw_data(indices), opengl.DYNAMIC_DRAW)
+	opengl.BufferData(
+		opengl.ARRAY_BUFFER,
+		len(vertices) * size_of(Vertex),
+		raw_data(vertices),
+		opengl.DYNAMIC_DRAW,
+	)
+	opengl.BufferData(
+		opengl.ELEMENT_ARRAY_BUFFER,
+		len(indices) * size_of(u32),
+		raw_data(indices),
+		opengl.DYNAMIC_DRAW,
+	)
 	opengl.DrawElements(opengl.TRIANGLES, i32(index_count), opengl.UNSIGNED_INT, nil)
 }
 
@@ -845,18 +833,27 @@ measure_text :: proc(text: string, pixel_height: f32) -> Text_Measurement {
 	for i := 0; i < len(text); i += 1 {
 		c := text[i]
 		if c == '\n' {
-			max_line_advance_x = max(max_line_advance_x, x*scale)
+			max_line_advance_x = max(max_line_advance_x, x * scale)
 			x = 0
 			y += font.pixel_height
-			max_y = max(max_y, y*scale)
+			max_y = max(max_y, y * scale)
 			continue
 		}
-		if c < byte(font.min_glyph) || c >= byte(font.min_glyph+font.num_glyphs) {
+		if c < byte(font.min_glyph) || c >= byte(font.min_glyph + font.num_glyphs) {
 			continue
 		}
 
 		glyph_quad: stbtt.aligned_quad
-		stbtt.GetBakedQuad(&font.chars[0], i32(texture.size[0]), i32(texture.size[1]), i32(c-byte(font.min_glyph)), &x, &y, &glyph_quad, true)
+		stbtt.GetBakedQuad(
+			&font.chars[0],
+			i32(texture.size[0]),
+			i32(texture.size[1]),
+			i32(c - byte(font.min_glyph)),
+			&x,
+			&y,
+			&glyph_quad,
+			true,
+		)
 
 		glyph_x0 := glyph_quad.x0 * scale
 		glyph_y0 := glyph_quad.y0 * scale
@@ -876,7 +873,7 @@ measure_text :: proc(text: string, pixel_height: f32) -> Text_Measurement {
 			max_y = max(max_y, glyph_y1)
 		}
 
-		max_line_advance_x = max(max_line_advance_x, x*scale)
+		max_line_advance_x = max(max_line_advance_x, x * scale)
 	}
 
 	max_x = max(max_x, max_line_advance_x)
@@ -892,7 +889,13 @@ measure_text :: proc(text: string, pixel_height: f32) -> Text_Measurement {
 	return out
 }
 
-draw_text_at_pos :: proc(quads: ^[dynamic]Quad, text: string, pos: [2]f32, pixel_height: f32, color: Color) {
+draw_text_at_pos :: proc(
+	quads: ^[dynamic]Quad,
+	text: string,
+	pos: [2]f32,
+	pixel_height: f32,
+	color: Color,
+) {
 	font := GL.font
 	texture := font.texture
 	if texture.handle == 0 || texture.size[0] <= 0 || texture.size[1] <= 0 {
@@ -914,58 +917,82 @@ draw_text_at_pos :: proc(quads: ^[dynamic]Quad, text: string, pos: [2]f32, pixel
 			y += font.pixel_height
 			continue
 		}
-		if c < byte(font.min_glyph) || c >= byte(font.min_glyph+font.num_glyphs) {
+		if c < byte(font.min_glyph) || c >= byte(font.min_glyph + font.num_glyphs) {
 			continue
 		}
 
 		glyph_quad: stbtt.aligned_quad
-		stbtt.GetBakedQuad(&font.chars[0], i32(texture.size[0]), i32(texture.size[1]), i32(c-byte(font.min_glyph)), &x, &y, &glyph_quad, true)
+		stbtt.GetBakedQuad(
+			&font.chars[0],
+			i32(texture.size[0]),
+			i32(texture.size[1]),
+			i32(c - byte(font.min_glyph)),
+			&x,
+			&y,
+			&glyph_quad,
+			true,
+		)
 
-		append_or_panic(quads, Quad{
-			bounds = Rect{
-				x = glyph_quad.x0 * scale,
-				y = glyph_quad.y0 * scale,
-				w = (glyph_quad.x1 - glyph_quad.x0) * scale,
-				h = (glyph_quad.y1 - glyph_quad.y0) * scale,
+		append_or_panic(
+			quads,
+			Quad {
+				bounds = Rect {
+					x = glyph_quad.x0 * scale,
+					y = glyph_quad.y0 * scale,
+					w = (glyph_quad.x1 - glyph_quad.x0) * scale,
+					h = (glyph_quad.y1 - glyph_quad.y0) * scale,
+				},
+				st_bounds = Rect {
+					x = glyph_quad.s0,
+					y = glyph_quad.t0,
+					w = glyph_quad.s1 - glyph_quad.s0,
+					h = glyph_quad.t1 - glyph_quad.t0,
+				},
+				fill = color_rect_uniform(color),
+				texture = font.texture,
+				tex_intensity = 1,
 			},
-			st_bounds = Rect{
-				x = glyph_quad.s0,
-				y = glyph_quad.t0,
-				w = glyph_quad.s1 - glyph_quad.s0,
-				h = glyph_quad.t1 - glyph_quad.t0,
-			},
-			fill = color_rect_uniform(color),
-			texture = font.texture,
-			tex_intensity = 1,
-		})
+		)
 	}
 }
 
-draw_text_in_rect :: proc(quads: ^[dynamic]Quad, text: string, bounds: Rect, positioning: Text_Positioning, pixel_height: f32, color: Color) {
+draw_text_in_rect :: proc(
+	quads: ^[dynamic]Quad,
+	text: string,
+	bounds: Rect,
+	positioning: Text_Positioning,
+	pixel_height: f32,
+	color: Color,
+) {
 	measure := measure_text(text, pixel_height)
 	pos := rect_corner(bounds)
 
 	if positioning == .Center {
-		pos[0] += (bounds.w-measure.size[0])/2 - measure.bounds_offset[0]
-		pos[1] += (bounds.h-measure.size[1])/2 + measure.baseline_y
+		pos[0] += (bounds.w - measure.size[0]) / 2 - measure.bounds_offset[0]
+		pos[1] += (bounds.h - measure.size[1]) / 2 + measure.baseline_y
 	}
 
 	draw_text_at_pos(quads, text, pos, pixel_height, color)
 }
 
-interpret_game_draw_commands :: proc(out: ^[dynamic]Quad, draw_commands: []Draw_Command, camera: Camera, framebuffer_size: [2]f32) {
+interpret_game_draw_commands :: proc(
+	out: ^[dynamic]Quad,
+	draw_commands: []Draw_Command,
+	camera: Camera,
+	framebuffer_size: [2]f32,
+) {
 	for cmd in draw_commands {
 		sprite := get_sprite_by_name(cmd.texture.name)
 		texture := sprite.texture
-		quad := Quad{
-			bounds = camera_world_to_screen_rect(camera, cmd.bounds, framebuffer_size),
-			clip = cmd.clip,
-			fill = cmd.texture.fill,
+		quad := Quad {
+			bounds        = camera_world_to_screen_rect(camera, cmd.bounds, framebuffer_size),
+			clip          = cmd.clip,
+			fill          = cmd.texture.fill,
 			tex_intensity = cmd.texture.intensity,
-			texture = texture,
-			stroke = cmd.border.color,
-			thickness_px = cmd.border.thickness,
-			radius_px = cmd.border.corner_radius,
+			texture       = texture,
+			stroke        = cmd.border.color,
+			thickness_px  = cmd.border.thickness,
+			radius_px     = cmd.border.corner_radius,
 		}
 
 		switch cmd.texture.mapping {
@@ -981,7 +1008,14 @@ interpret_game_draw_commands :: proc(out: ^[dynamic]Quad, draw_commands: []Draw_
 		}
 
 		append_or_panic(out, quad)
-		draw_text_in_rect(out, cmd.text.text, cmd.bounds, .Center, cmd.text.pixel_height, cmd.text.color)
+		draw_text_in_rect(
+			out,
+			cmd.text.text,
+			cmd.bounds,
+			.Center,
+			cmd.text.pixel_height,
+			cmd.text.color,
+		)
 	}
 }
 
@@ -989,7 +1023,10 @@ draw_commands :: proc(commands: []Draw_Command, camera: Camera, framebuffer_size
 	scratch := get_scratch()
 	defer release_scratch(scratch)
 
-	quads := make([dynamic]Quad, 0, DEFAULT_MAX_GL_QUADS, scratch.arena) or_else panic("failed to allocate quads")
+	quads :=
+		make([dynamic]Quad, 0, DEFAULT_MAX_GL_QUADS, scratch.arena) or_else panic(
+			"failed to allocate quads",
+		)
 	interpret_game_draw_commands(&quads, commands, camera, framebuffer_size)
 
 	batches := quad_batch_calculate(quads[:], scratch.arena)
@@ -998,7 +1035,10 @@ draw_commands :: proc(commands: []Draw_Command, camera: Camera, framebuffer_size
 			continue
 		}
 
-		vertices := make([dynamic]Vertex, 0, len(batch.quads)*4, scratch.arena) or_else panic("failed to allocate vertices")
+		vertices :=
+			make([dynamic]Vertex, 0, len(batch.quads) * 4, scratch.arena) or_else panic(
+				"failed to allocate vertices",
+			)
 		for quad in batch.quads {
 			vertex_array_push_quad(&vertices, quad, framebuffer_size)
 		}
@@ -1009,7 +1049,10 @@ draw_commands :: proc(commands: []Draw_Command, camera: Camera, framebuffer_size
 
 draw_terrain :: proc(camera: Camera, framebuffer_size: [2]f32) {
 	terrain_tile_size_px :: f32(40)
-	if framebuffer_size[0] <= 0 || framebuffer_size[1] <= 0 || GL.terrain_keys.size[0] <= 0 || GL.terrain_keys.size[1] <= 0 {
+	if framebuffer_size[0] <= 0 ||
+	   framebuffer_size[1] <= 0 ||
+	   GL.terrain_keys.size[0] <= 0 ||
+	   GL.terrain_keys.size[1] <= 0 {
 		return
 	}
 
@@ -1025,26 +1068,37 @@ draw_terrain :: proc(camera: Camera, framebuffer_size: [2]f32) {
 	scratch := get_scratch()
 	defer release_scratch(scratch)
 
-	vertices := make([dynamic]Vertex, 0, 4, scratch.arena) or_else panic("failed to allocate terrain vertices")
-	screen_points := [4][2]f32{{0, 0}, {framebuffer_size[0], 0}, {framebuffer_size[0], framebuffer_size[1]}, {0, framebuffer_size[1]}}
+	vertices :=
+		make([dynamic]Vertex, 0, 4, scratch.arena) or_else panic(
+			"failed to allocate terrain vertices",
+		)
+	screen_points := [4][2]f32 {
+		{0, 0},
+		{framebuffer_size[0], 0},
+		{framebuffer_size[0], framebuffer_size[1]},
+		{0, framebuffer_size[1]},
+	}
 
 	for screen_point in screen_points {
 		world_point := camera_screen_to_world_pos(camera, screen_point, framebuffer_size)
-		append_or_panic(&vertices, Vertex{
-			xy = {
-				(screen_point[0]/framebuffer_size[0])*2 - 1,
-				1 - (screen_point[1]/framebuffer_size[1])*2,
+		append_or_panic(
+			&vertices,
+			Vertex {
+				xy = {
+					(screen_point[0] / framebuffer_size[0]) * 2 - 1,
+					1 - (screen_point[1] / framebuffer_size[1]) * 2,
+				},
+				uv = {
+					(world_point[0] + 0.5) / GL.terrain_keys.size[0],
+					(world_point[1] + 0.5) / GL.terrain_keys.size[1],
+				},
+				st = {
+					world_point[0] * world_to_px / terrain_tile_size_px,
+					world_point[1] * world_to_px / terrain_tile_size_px,
+				},
+				col = WHITE,
 			},
-			uv = {
-				(world_point[0] + 0.5) / GL.terrain_keys.size[0],
-				(world_point[1] + 0.5) / GL.terrain_keys.size[1],
-			},
-			st = {
-				world_point[0] * world_to_px / terrain_tile_size_px,
-				world_point[1] * world_to_px / terrain_tile_size_px,
-			},
-			col = WHITE,
-		})
+		)
 	}
 
 	draw_call(vertices[:], .Terrain, {})
@@ -1071,3 +1125,4 @@ get_sprite_by_name :: proc(name: string) -> Sprite {
 	}
 	return {}
 }
+

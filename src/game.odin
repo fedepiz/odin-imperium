@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:mem"
 
 Camera :: struct {
@@ -68,6 +69,11 @@ Draw_Command :: struct {
 	text:    Draw_Text,
 }
 
+Click_Box :: struct {
+	id:     int,
+	bounds: Rect,
+}
+
 Frame_Output :: struct {
 	camera:              Camera,
 	board_draw_commands: []Draw_Command,
@@ -108,8 +114,8 @@ camera_screen_to_world_pos :: proc(camera: Camera, pos, framebuffer_size: [2]f32
 	_ = framebuffer_size
 	screen_per_world_px := camera_screen_per_world_px(camera)
 	return {
-		camera.center[0] + pos[0]/screen_per_world_px,
-		camera.center[1] + pos[1]/screen_per_world_px,
+		camera.center[0] + pos[0] / screen_per_world_px,
+		camera.center[1] + pos[1] / screen_per_world_px,
 	}
 }
 
@@ -126,8 +132,8 @@ camera_world_to_screen_rect :: proc(camera: Camera, rect: Rect, framebuffer_size
 
 camera_center_on :: proc(camera: ^Camera, pos, framebuffer_size: [2]f32) {
 	screen_per_world_px := camera_screen_per_world_px(camera^)
-	camera.center[0] = pos[0] - framebuffer_size[0]*0.5/screen_per_world_px
-	camera.center[1] = pos[1] - framebuffer_size[1]*0.5/screen_per_world_px
+	camera.center[0] = pos[0] - framebuffer_size[0] * 0.5 / screen_per_world_px
+	camera.center[1] = pos[1] - framebuffer_size[1] * 0.5 / screen_per_world_px
 }
 
 camera_update :: proc(camera: ^Camera, dtranslate: [2]f32, dzoom: f32, framebuffer_size: [2]f32) {
@@ -157,7 +163,13 @@ game_init :: proc() {
 	GAME.camera.zoom = 1
 }
 
-game_build_ui :: proc(allocator: mem.Allocator, out: ^Frame_Output, input: Frame_Input) {
+game_build_ui :: proc(
+	allocator: mem.Allocator,
+	out: ^Frame_Output,
+	input: Frame_Input,
+) -> (
+	mouse_over: bool,
+) {
 	ui_begin_frame(input)
 
 	ui_unit := f32(30)
@@ -204,20 +216,38 @@ game_build_ui :: proc(allocator: mem.Allocator, out: ^Frame_Output, input: Frame
 
 	out.camera = GAME.camera
 	out.ui_draw_commands = ui_end_frame(allocator)
+
+	return ui_is_mouse_over_area()
 }
 
-game_present :: proc(allocator: mem.Allocator, out: ^Frame_Output) {
-	commands := make([dynamic]Draw_Command, 0, 1, allocator) or_else panic("failed to allocate board commands")
-	append_or_panic(&commands, Draw_Command{
-		bounds = Rect{300, 250, 1, 1},
-		texture = Draw_Texture{
-			name = "soldier",
-			fill = color_rect_uniform(WHITE),
-			intensity = 1,
-			mapping = .Stretch,
+game_present :: proc(allocator: mem.Allocator, out: ^Frame_Output) -> []Click_Box {
+	commands: [dynamic]Draw_Command =
+		make([dynamic]Draw_Command, 0, 1, allocator) or_else panic(
+			"failed to allocate board commands",
+		)
+	click_boxes: [dynamic]Click_Box =
+		make([dynamic]Click_Box, 0, 1, allocator) or_else panic("failed to allocate click boxes")
+
+	bounds := Rect{300, 250, 1, 1}
+
+	append(
+		&commands,
+		Draw_Command {
+			bounds = bounds,
+			texture = Draw_Texture {
+				name = "soldier",
+				fill = color_rect_uniform(WHITE),
+				intensity = 1,
+				mapping = .Stretch,
+			},
 		},
-	})
+	)
+
+	append(&click_boxes, Click_Box{bounds = bounds, id = 5})
+
 	out.board_draw_commands = commands[:]
+
+	return click_boxes[:]
 }
 
 update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame_Output {
@@ -227,10 +257,37 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 
 	GAME.tick_num += 1
-	camera_update(&GAME.camera, input.camera.dtranslate, input.camera.dzoom, input.framebuffer_size)
+	camera_update(
+		&GAME.camera,
+		input.camera.dtranslate,
+		input.camera.dzoom,
+		input.framebuffer_size,
+	)
 
 	out: Frame_Output
-	game_present(allocator, &out)
-	game_build_ui(allocator, &out, input)
+	click_boxes := game_present(allocator, &out)
+	mouse_over_ui := game_build_ui(allocator, &out, input)
+
+	// Handle on click
+	if !mouse_over_ui && input.mouse_clicked {
+		mouse_pos := camera_screen_to_world_pos(
+			GAME.camera,
+			input.mouse_pos,
+			input.framebuffer_size,
+		)
+		picked_id: int
+		for pos in 1 ..= len(click_boxes) {
+			click_box := click_boxes[len(click_boxes) - pos]
+			if rect_contains_point(click_box.bounds, mouse_pos) {
+				picked_id = click_box.id
+			}
+		}
+		if picked_id == 0 {
+			fmt.printf("Nothing picked\n")
+		} else {
+			fmt.printf("Picked id:%v\n", picked_id)
+		}
+	}
 	return out
 }
+
