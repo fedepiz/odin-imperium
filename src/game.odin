@@ -291,7 +291,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 
 	out: Frame_Output
 
-	out.board_draw_commands = tick_result.draw_commands
+	out.board_draw_commands = tick_result.draw_commands[:]
 	mouse_over_ui := game_build_ui(allocator, &out, input, tick_result.selected_panel)
 
 	// Handle on click

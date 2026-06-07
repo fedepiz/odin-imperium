@@ -94,8 +94,8 @@ Tick_Ctx :: struct {
 }
 
 Tick_Output :: struct {
-	draw_commands:  []Draw_Command,
-	click_boxes:    []Click_Box,
+	draw_commands:  [dynamic]Draw_Command,
+	click_boxes:    [dynamic]Click_Box,
 	selected_panel: Gui_Selected_Panel,
 }
 
@@ -208,13 +208,8 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 	}
 
 	// Presentation
-	draw_commands: [dynamic]Draw_Command = make(
-		[dynamic]Draw_Command,
-		0,
-		num_visible + num_labels,
-		arena,
-	)
-	click_boxes: [dynamic]Click_Box = make([dynamic]Click_Box, 0, num_visible, arena)
+	out.draw_commands = make([dynamic]Draw_Command, 0, num_visible + num_labels, arena)
+	out.click_boxes = make([dynamic]Click_Box, 0, num_visible, arena)
 
 	for ix in 1 ..< NUM_THINGS {
 		this := &ctx.new_things[ix]
@@ -227,13 +222,12 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 		}
 
 		size := this.vars[.Size]
-		pos_x := this.vars[.Pos_X] - size * 0.5
-		pos_y := this.vars[.Pos_Y] - size * 0.5
-		if size <= 0 || len(this.labels[.Sprite]) == 0 {continue}
-		is_selected := this.id == ctx.selected_id
-		layer := int(this.vars[.Layer])
+		if size > 0 && len(this.labels[.Sprite]) > 0 {
+			pos_x := this.vars[.Pos_X] - size * 0.5
+			pos_y := this.vars[.Pos_Y] - size * 0.5
+			is_selected := this.id == ctx.selected_id
+			layer := int(this.vars[.Layer])
 
-		{
 			cmd: Draw_Command
 			cmd.bounds = {pos_x, pos_y, size, size}
 			cmd.texture.name = this.labels[.Sprite]
@@ -246,55 +240,54 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 				cmd.border.thickness = 2
 			}
 
-			append(&draw_commands, cmd)
+			append(&out.draw_commands, cmd)
 
 			cb: Click_Box
 			cb.id = this.id
 			cb.bounds = cmd.bounds
 			cb.layer = layer
-			append(&click_boxes, cb)
-		}
+			append(&out.click_boxes, cb)
 
-		name := this.labels[.Name]
-		if len(name) != 0 {
-			// Draw label
-			label_pixel_height := f32(22)
-			label_padding_px := f32(4)
-			label_gap_px := f32(2)
-			world_per_screen_px := 1 / camera_screen_per_world_px(ctx.camera)
-			text_measure := measure_text(name, label_pixel_height)
-			label_w := (text_measure.size[0] + label_padding_px * 2) * world_per_screen_px
-			label_h := (text_measure.size[1] + label_padding_px * 2) * world_per_screen_px
-			label_x := pos_x + (size - label_w) * 0.5
-			label_y := pos_y + size + label_gap_px * world_per_screen_px
+			name := this.labels[.Name]
+			if len(name) != 0 {
+				// Draw label
+				label_pixel_height := f32(22)
+				label_padding_px := f32(4)
+				label_gap_px := f32(2)
+				world_per_screen_px := 1 / camera_screen_per_world_px(ctx.camera)
+				text_measure := measure_text(name, label_pixel_height)
+				label_w := (text_measure.size[0] + label_padding_px * 2) * world_per_screen_px
+				label_h := (text_measure.size[1] + label_padding_px * 2) * world_per_screen_px
+				label_x := pos_x + (size - label_w) * 0.5
+				label_y := pos_y + size + label_gap_px * world_per_screen_px
 
-			label_cmd: Draw_Command
-			label_cmd.bounds = {label_x, label_y, label_w, label_h}
-			label_cmd.texture.color = color_rect_uniform(color_rgba(0, 0, 0, 0.6))
-			label_cmd.text.text = name
-			label_cmd.text.color = WHITE
-			if is_selected {
-				label_cmd.text.color = YELLOW
+				label_cmd: Draw_Command
+				label_cmd.bounds = {label_x, label_y, label_w, label_h}
+				label_cmd.texture.color = color_rect_uniform(color_rgba(0, 0, 0, 0.6))
+				label_cmd.text.text = name
+				label_cmd.text.color = WHITE
+				if is_selected {
+					label_cmd.text.color = YELLOW
+				}
+				label_cmd.text.pixel_height = label_pixel_height
+				label_cmd.text.alignment = .Center
+				label_cmd.text.wrapping = .Truncate
+
+				append(&out.draw_commands, label_cmd)
 			}
-			label_cmd.text.pixel_height = label_pixel_height
-			label_cmd.text.alignment = .Center
-			label_cmd.text.wrapping = .Truncate
-
-			append(&draw_commands, label_cmd)
 		}
 	}
 
+
 	sort.quick_sort_proc(
-		draw_commands[:],
+		out.draw_commands[:][:],
 		proc(x: Draw_Command, y: Draw_Command) -> int {return x.layer - y.layer},
 	)
 	sort.quick_sort_proc(
-		click_boxes[:],
+		out.click_boxes[:][:],
 		proc(x: Click_Box, y: Click_Box) -> int {return y.layer - x.layer},
 	)
 
-	out.draw_commands = draw_commands[:]
-	out.click_boxes = click_boxes[:]
 	return out
 }
 
