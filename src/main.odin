@@ -203,7 +203,7 @@ main :: proc() {
 	fmt.printf("OpenGL %s\n", string(gl.GetString(gl.VERSION)))
 
 	init(persistent_allocator)
-	game_init()
+
 	widget_texture := load_texture_from_file("assets/widget.png", .Linear)
 	push_sprite(
 		"widget",
@@ -252,3 +252,4 @@ main :: proc() {
 		end_frame(window)
 	}
 }
+

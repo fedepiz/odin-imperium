@@ -1,5 +1,23 @@
-thing,ansoaldus
-sprite,soldier
+spawn,caer_ligualid
+label,Sprite,celtic_town
+label,Name,Caer Ligualid
+var,Pos_X,298
+var,Pos_Y,253
+var,Size,3
+spawn,anava
+label,Sprite,celtic_village
+label,Name,Anava
+var,Pos_X,303
+var,Pos_Y,248
+var,Size,2
+spawn,din_drust
+label,Sprite,celtic_castle
+label,Name,Din Drust
+var,Pos_X,290
+var,Pos_Y,250
+var,Size,2
+spawn,ansoaldus
+label,Sprite,soldier
 label,Name,Ansoaldus
 var,Pos_X,300
 var,Pos_Y,250

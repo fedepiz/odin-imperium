@@ -81,6 +81,7 @@ Frame_Output :: struct {
 
 Game_State :: struct {
 	camera:      Camera,
+	world_graph: World_Graph,
 	tick_num:    u64,
 	things:      [2]Things,
 	selected_id: ThId,
@@ -157,11 +158,12 @@ camera_update :: proc(camera: ^Camera, dtranslate: [2]f32, dzoom: f32, framebuff
 	camera_center_on(camera, world_center, framebuffer_size)
 }
 
-game_init :: proc() {
+game_init :: proc(world_graph: World_Graph) {
 	ui_init()
 	GAME = {}
 	GAME.camera.world_to_px = 10
 	GAME.camera.zoom = 1
+	GAME.world_graph = world_graph
 }
 
 game_build_ui :: proc(
@@ -258,6 +260,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		ctx.new_things = new_things.entries[:]
 		ctx.selected_id = GAME.selected_id
 		ctx.camera = GAME.camera
+		ctx.world_graph = GAME.world_graph
 
 		tick_result = things_tick(allocator, ctx)
 	}

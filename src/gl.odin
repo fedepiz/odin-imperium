@@ -594,21 +594,24 @@ vertex_attrib :: proc(index: u32, count: int, offset: uintptr) {
 	opengl.VertexAttribPointer(index, i32(count), opengl.FLOAT, false, size_of(Vertex), offset)
 }
 
-terrain_init :: proc() {
-	Terrain_Type :: struct {
-		name:           string,
-		movement_speed: f32,
-		tile_x:         u8,
-		tile_y:         u8,
-		elevation:      f32,
-	}
+Terrain_Type :: struct {
+	name:           string,
+	movement_speed: f32,
+	tile_x:         u8,
+	tile_y:         u8,
+	elevation:      f32,
+}
 
-	scratch := get_scratch()
+terrain_init :: proc(arena: mem.Allocator) -> World_Graph {
+	world_graph: World_Graph
+
+
+	scratch := get_scratch(arena)
 	defer release_scratch(scratch)
 
 	records, ok := load_csv_records("data/terrain_types.csv", scratch.arena)
 	if !ok {
-		return
+		return world_graph
 	}
 
 	terrain_types :=
@@ -635,13 +638,23 @@ terrain_init :: proc() {
 	heightmap := app_image_load_from_file("assets/britain.png")
 	defer app_image_destroy(heightmap)
 	if heightmap.width == 0 || heightmap.height == 0 || len(terrain_types) == 0 {
-		return
+		return world_graph
+	}
+
+	terrain_cells, terrain_cells_err := make(
+		[]Terrain_Type,
+		heightmap.width * heightmap.height,
+		scratch.arena,
+	)
+	if terrain_cells_err != nil {
+		panic("failed to allocate terrain cell map")
 	}
 
 	terrain_keys := app_image_empty(scratch.arena, heightmap.width, heightmap.height)
 	for y := 0; y < heightmap.height; y += 1 {
 		for x := 0; x < heightmap.width; x += 1 {
 			pixel_idx := (y * heightmap.width + x) * 4
+			cell_idx := y * heightmap.width + x
 			height := f32(heightmap.pixels[pixel_idx]) / 255.0
 
 			terrain_id := 0
@@ -653,6 +666,7 @@ terrain_init :: proc() {
 			}
 
 			tt := terrain_types[terrain_id]
+			terrain_cells[cell_idx] = tt
 			terrain_keys.pixels[pixel_idx + 0] = tt.tile_x
 			terrain_keys.pixels[pixel_idx + 1] = tt.tile_y
 			terrain_keys.pixels[pixel_idx + 2] = 0
@@ -661,6 +675,7 @@ terrain_init :: proc() {
 	}
 
 	GL.terrain_keys = load_texture_from_image(terrain_keys, .Neighbour)
+	return make_world_graph(arena, {heightmap.width, heightmap.height}, terrain_cells)
 }
 
 init :: proc(allocator: mem.Allocator) {
@@ -724,7 +739,7 @@ init :: proc(allocator: mem.Allocator) {
 		}
 	}
 
-	terrain_init()
+	world_map := terrain_init(allocator)
 
 	opengl.GenVertexArrays(1, &GL.vao)
 	opengl.GenBuffers(1, &GL.vbo)
@@ -745,6 +760,9 @@ init :: proc(allocator: mem.Allocator) {
 	vertex_attrib(8, 1, offset_of(Vertex, tex_intensity))
 	vertex_attrib(9, 4, offset_of(Vertex, rim_color))
 	vertex_attrib(10, 1, offset_of(Vertex, rim_thickness_px))
+
+
+	game_init(world_map)
 }
 
 draw_call :: proc(vertices: []Vertex, mode: Shader_Mode, texture: Texture) {
