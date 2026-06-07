@@ -1,8 +1,8 @@
 package main
 
-import "core:fmt"
 import "core:math"
 import "core:mem"
+import "core:sort"
 import "core:strings"
 
 THINGS_BLOB_SIZE :: 20_000_000
@@ -50,12 +50,14 @@ Var :: enum {
 	Pos_X,
 	Pos_Y,
 	Size,
+	Layer,
 }
 
 VAR_NAMES := [Var]string {
 	.Pos_X = "Pos_X",
 	.Pos_Y = "Pos_Y",
 	.Size  = "Size",
+	.Layer = "Layer",
 }
 
 Flag :: enum {
@@ -92,8 +94,9 @@ Tick_Ctx :: struct {
 }
 
 Tick_Output :: struct {
-	draw_commands: []Draw_Command,
-	click_boxes:   []Click_Box,
+	draw_commands:  []Draw_Command,
+	click_boxes:    []Click_Box,
+	selected_panel: Gui_Selected_Panel,
 }
 
 get_thing :: proc(ctx: Tick_Ctx, id: ThId) -> ^Thing {
@@ -135,6 +138,7 @@ calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32
 }
 
 things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
+	out: Tick_Output
 	scratch := get_scratch(arena)
 	defer release_scratch(scratch)
 
@@ -214,11 +218,20 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 
 	for ix in 1 ..< NUM_THINGS {
 		this := &ctx.new_things[ix]
+
+		if this.id == ctx.selected_id {
+			panel: Gui_Selected_Panel
+			panel.visible = true
+			panel.name = this.labels[.Name]
+			out.selected_panel = panel
+		}
+
 		size := this.vars[.Size]
 		pos_x := this.vars[.Pos_X] - size * 0.5
 		pos_y := this.vars[.Pos_Y] - size * 0.5
 		if size <= 0 || len(this.labels[.Sprite]) == 0 {continue}
 		is_selected := this.id == ctx.selected_id
+		layer := int(this.vars[.Layer])
 
 		{
 			cmd: Draw_Command
@@ -226,6 +239,7 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 			cmd.texture.name = this.labels[.Sprite]
 			cmd.texture.color = color_rect_uniform(WHITE)
 			cmd.texture.intensity = 1
+			cmd.layer = layer
 
 			if is_selected {
 				cmd.border.color = color_rect_uniform(YELLOW)
@@ -237,6 +251,7 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 			cb: Click_Box
 			cb.id = this.id
 			cb.bounds = cmd.bounds
+			cb.layer = layer
 			append(&click_boxes, cb)
 		}
 
@@ -269,7 +284,15 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 		}
 	}
 
-	out: Tick_Output
+	sort.quick_sort_proc(
+		draw_commands[:],
+		proc(x: Draw_Command, y: Draw_Command) -> int {return x.layer - y.layer},
+	)
+	sort.quick_sort_proc(
+		click_boxes[:],
+		proc(x: Click_Box, y: Click_Box) -> int {return y.layer - x.layer},
+	)
+
 	out.draw_commands = draw_commands[:]
 	out.click_boxes = click_boxes[:]
 	return out

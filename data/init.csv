@@ -22,4 +22,5 @@ label,Name,Ansoaldus
 var,Pos_X,300
 var,Pos_Y,250
 var,Size,1
+var,Layer,1
 flag,IsDebug

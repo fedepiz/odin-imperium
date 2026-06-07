@@ -66,11 +66,13 @@ Draw_Command :: struct {
 	texture: Draw_Texture,
 	border:  Draw_Border,
 	text:    Draw_Text,
+	layer:   int,
 }
 
 Click_Box :: struct {
 	id:     ThId,
 	bounds: Rect,
+	layer:  int,
 }
 
 Frame_Output :: struct {
@@ -166,10 +168,16 @@ game_init :: proc(world_graph: World_Graph) {
 	GAME.world_graph = world_graph
 }
 
+Gui_Selected_Panel :: struct {
+	visible: bool,
+	name:    string,
+}
+
 game_build_ui :: proc(
 	allocator: mem.Allocator,
 	out: ^Frame_Output,
 	input: Frame_Input,
+	selected_panel: Gui_Selected_Panel,
 ) -> (
 	mouse_over: bool,
 ) {
@@ -210,6 +218,22 @@ game_build_ui :: proc(
 			ui_row_begin()
 			ui_hsep()
 			_ = ui_button("Goodbye", 4)
+			ui_hsep()
+			ui_widget_end()
+		}
+		ui_vsep()
+		ui_widget_end()
+	}
+
+	if selected_panel.visible {
+		_ = ui_panel_begin("###SELECTED_PANEL", {0, 0})
+		ui_set_texture("widget", 0.25)
+		ui_heading("Selected", 11)
+		ui_vsep()
+		{
+			ui_row_begin()
+			ui_hsep()
+			ui_label(selected_panel.name, 10)
 			ui_hsep()
 			ui_widget_end()
 		}
@@ -268,7 +292,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	out: Frame_Output
 
 	out.board_draw_commands = tick_result.draw_commands
-	mouse_over_ui := game_build_ui(allocator, &out, input)
+	mouse_over_ui := game_build_ui(allocator, &out, input, tick_result.selected_panel)
 
 	// Handle on click
 	if !mouse_over_ui && input.mouse_clicked {
@@ -289,3 +313,4 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 	return out
 }
+
