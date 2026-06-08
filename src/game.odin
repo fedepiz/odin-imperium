@@ -33,6 +33,7 @@ Draw_Text_Alignment :: enum {
 }
 
 Draw_Text_Wrapping :: enum {
+	Nil,
 	Truncate,
 	Wrap,
 }
@@ -179,8 +180,8 @@ game_init :: proc(world_graph: World_Graph) {
 }
 
 Gui_Selected_Panel :: struct {
-	visible: bool,
-	name:    string,
+	visible:   bool,
+	info_text: string,
 }
 
 game_build_ui :: proc(
@@ -243,7 +244,7 @@ game_build_ui :: proc(
 		{
 			ui_row_begin()
 			ui_hsep()
-			ui_label(selected_panel.name, 10)
+			ui_multiline(selected_panel.info_text, 10, 10)
 			ui_hsep()
 			ui_widget_end()
 		}

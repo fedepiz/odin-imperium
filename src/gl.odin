@@ -41,6 +41,7 @@ rect_corner :: proc(rect: Rect) -> [2]f32 {
 	return {rect.x, rect.y}
 }
 
+@(private = "file")
 rect_size :: proc(rect: Rect) -> [2]f32 {
 	return {rect.w, rect.h}
 }
@@ -53,6 +54,7 @@ append_or_panic :: proc(array: ^[dynamic]$T, values: ..T) {
 	_ = append(array, ..values) or_else panic("out of memory")
 }
 
+@(private = "file")
 read_entire_text :: proc(path: string, allocator: mem.Allocator) -> (string, bool) {
 	bytes, err := os.read_entire_file(path, allocator)
 	if err != nil {
@@ -62,6 +64,7 @@ read_entire_text :: proc(path: string, allocator: mem.Allocator) -> (string, boo
 	return string(bytes), true
 }
 
+@(private = "file")
 parse_f32_or_zero :: proc(text: string) -> f32 {
 	value, ok := strconv.parse_f32(text)
 	if !ok {
@@ -70,6 +73,7 @@ parse_f32_or_zero :: proc(text: string) -> f32 {
 	return value
 }
 
+@(private = "file")
 parse_u8_or_zero :: proc(text: string) -> u8 {
 	value, ok := strconv.parse_int(text)
 	if !ok || value < 0 || value > 255 {
@@ -104,6 +108,7 @@ load_csv_records :: proc(path: string, allocator: mem.Allocator) -> ([][]string,
 	return records, true
 }
 
+@(private = "file")
 APP_Image :: struct {
 	pixels:     []u8,
 	width:      int,
@@ -111,17 +116,20 @@ APP_Image :: struct {
 	stb_pixels: rawptr,
 }
 
+@(private = "file")
 Named_Image :: struct {
 	name:  string,
 	image: APP_Image,
 }
 
+@(private = "file")
 APP_Image_Atlas :: struct {
 	image:         APP_Image,
 	region_names:  []string,
 	region_bounds: []Rect,
 }
 
+@(private = "file")
 app_image_empty :: proc(allocator: mem.Allocator, width, height: int) -> APP_Image {
 	pixels, err := make([]u8, width * height * 4, allocator)
 	if err != nil {
@@ -131,6 +139,7 @@ app_image_empty :: proc(allocator: mem.Allocator, width, height: int) -> APP_Ima
 	return APP_Image{pixels = pixels, width = width, height = height}
 }
 
+@(private = "file")
 app_image_load_from_file :: proc(path: string) -> APP_Image {
 	scratch := get_scratch()
 	defer release_scratch(scratch)
@@ -166,12 +175,14 @@ app_image_load_from_file :: proc(path: string) -> APP_Image {
 	}
 }
 
+@(private = "file")
 app_image_destroy :: proc(image: APP_Image) {
 	if image.stb_pixels != nil {
 		stbi.image_free(image.stb_pixels)
 	}
 }
 
+@(private = "file")
 app_image_atlas_make :: proc(
 	allocator: mem.Allocator,
 	images: []Named_Image,
@@ -269,12 +280,14 @@ Texture_Filter :: enum {
 	Neighbour,
 }
 
+@(private = "file")
 Sprite :: struct {
 	name:    string,
 	texture: Texture,
 	bounds:  Rect,
 }
 
+@(private = "file")
 Vertex :: struct {
 	xy:               [2]f32,
 	uv:               [2]f32,
@@ -289,6 +302,7 @@ Vertex :: struct {
 	rim_thickness_px: f32,
 }
 
+@(private = "file")
 Quad :: struct {
 	bounds:        Rect,
 	clip:          Rect,
@@ -301,10 +315,12 @@ Quad :: struct {
 	thickness_px:  f32,
 }
 
+@(private = "file")
 Quad_Batch :: struct {
 	quads: []Quad,
 }
 
+@(private = "file")
 Font_Data :: struct {
 	chars:        [96]stbtt.bakedchar,
 	texture:      Texture,
@@ -313,6 +329,7 @@ Font_Data :: struct {
 	pixel_height: f32,
 }
 
+@(private = "file")
 State :: struct {
 	allocator:       mem.Allocator,
 	program:         u32,
@@ -328,6 +345,7 @@ State :: struct {
 
 GL: State
 
+@(private = "file")
 Shader_Mode :: enum i32 {
 	Default = 0,
 	Terrain = 1,
@@ -339,12 +357,22 @@ Text_Measurement :: struct {
 	baseline_y:    f32,
 }
 
-Text_Positioning :: enum {
-	Center,
+@(private = "file")
+Displayable_Text_Line :: struct {
+	text:    string,
+	measure: Text_Measurement,
+}
+
+@(private = "file")
+Displayable_Text :: struct {
+	lines:       []Displayable_Text_Line,
+	measurement: Text_Measurement,
+	line_height: f32,
 }
 
 QUAD_UV := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 
+@(private = "file")
 screen_to_ndc :: proc(bounds: Rect, fb_size: [2]f32) -> Rect {
 	if fb_size[0] <= 0 || fb_size[1] <= 0 {
 		return {}
@@ -358,6 +386,7 @@ screen_to_ndc :: proc(bounds: Rect, fb_size: [2]f32) -> Rect {
 	return Rect{x = x0, y = y0, w = w, h = h}
 }
 
+@(private = "file")
 vertex_array_push_quad :: proc(vertices: ^[dynamic]Vertex, quad: Quad, fb_size: [2]f32) {
 	ndc_bounds := screen_to_ndc(quad.bounds, fb_size)
 	ndc_size := rect_size(ndc_bounds)
@@ -386,6 +415,7 @@ vertex_array_push_quad :: proc(vertices: ^[dynamic]Vertex, quad: Quad, fb_size: 
 	}
 }
 
+@(private = "file")
 quad_batch_calculate :: proc(quads: []Quad, allocator: mem.Allocator) -> []Quad_Batch {
 	if len(quads) == 0 {
 		return nil
@@ -408,6 +438,7 @@ quad_batch_calculate :: proc(quads: []Quad, allocator: mem.Allocator) -> []Quad_
 	return batches[:]
 }
 
+@(private = "file")
 load_texture_from_image :: proc(image: APP_Image, filter: Texture_Filter) -> Texture {
 	texture := Texture {
 		size = {f32(image.width), f32(image.height)},
@@ -448,6 +479,7 @@ load_texture_from_file :: proc(filename: string, filter: Texture_Filter) -> Text
 	return load_texture_from_image(image, filter)
 }
 
+@(private = "file")
 load_font :: proc(path: string) -> Font_Data {
 	out: Font_Data
 	scratch := get_scratch()
@@ -510,6 +542,7 @@ load_font :: proc(path: string) -> Font_Data {
 	return out
 }
 
+@(private = "file")
 compile_shader :: proc(kind: u32, path: string) -> u32 {
 	shader := opengl.CreateShader(kind)
 	scratch := get_scratch()
@@ -547,6 +580,7 @@ compile_shader :: proc(kind: u32, path: string) -> u32 {
 	return shader
 }
 
+@(private = "file")
 make_program :: proc(vertex_path, fragment_path: string) -> u32 {
 	vertex_shader := compile_shader(opengl.VERTEX_SHADER, vertex_path)
 	fragment_shader := compile_shader(opengl.FRAGMENT_SHADER, fragment_path)
@@ -581,6 +615,7 @@ make_program :: proc(vertex_path, fragment_path: string) -> u32 {
 	return program
 }
 
+@(private = "file")
 uniform_location :: proc(program: u32, name: string) -> i32 {
 	scratch := get_scratch()
 	defer release_scratch(scratch)
@@ -589,6 +624,7 @@ uniform_location :: proc(program: u32, name: string) -> i32 {
 	return opengl.GetUniformLocation(program, cname)
 }
 
+@(private = "file")
 vertex_attrib :: proc(index: u32, count: int, offset: uintptr) {
 	opengl.EnableVertexAttribArray(index)
 	opengl.VertexAttribPointer(index, i32(count), opengl.FLOAT, false, size_of(Vertex), offset)
@@ -602,6 +638,7 @@ Terrain_Type :: struct {
 	elevation:      f32,
 }
 
+@(private = "file")
 terrain_init :: proc(arena: mem.Allocator) -> World_Graph {
 	world_graph: World_Graph
 
@@ -765,6 +802,7 @@ init :: proc(allocator: mem.Allocator) {
 	game_init(world_map)
 }
 
+@(private = "file")
 draw_call :: proc(vertices: []Vertex, mode: Shader_Mode, texture: Texture) {
 	quad_count := len(vertices) / 4
 	index_count := quad_count * 6
@@ -911,6 +949,170 @@ measure_text :: proc(text: string, pixel_height: f32) -> Text_Measurement {
 	return out
 }
 
+@(private = "file")
+font_line_height :: proc(pixel_height: f32) -> f32 {
+	font := GL.font
+	scale := f32(1)
+	if font.pixel_height != 0 {
+		scale = pixel_height / font.pixel_height
+	}
+	return font.pixel_height * scale
+}
+
+@(private = "file")
+append_displayable_text_line :: proc(
+	lines: ^[dynamic]Displayable_Text_Line,
+	text: string,
+	pixel_height: f32,
+) {
+	append_or_panic(lines, Displayable_Text_Line{text = text, measure = measure_text(text, pixel_height)})
+}
+
+@(private = "file")
+truncate_text_to_width :: proc(text: string, pixel_height, max_width: f32) -> string {
+	if max_width <= 0 || measure_text(text, pixel_height).size[0] <= max_width {
+		return text
+	}
+
+	end := 0
+	for i := 0; i < len(text); i += 1 {
+		candidate := text[:i + 1]
+		if measure_text(candidate, pixel_height).size[0] > max_width {
+			break
+		}
+		end = i + 1
+	}
+
+	return text[:end]
+}
+
+@(private = "file")
+append_wrapped_text_range :: proc(
+	lines: ^[dynamic]Displayable_Text_Line,
+	text: string,
+	pixel_height, max_width: f32,
+) {
+	if len(text) == 0 || max_width <= 0 || measure_text(text, pixel_height).size[0] <= max_width {
+		append_displayable_text_line(lines, text, pixel_height)
+		return
+	}
+
+	line_start := 0
+	line_end := 0
+	last_break := -1
+
+	for i := 0; i < len(text); i += 1 {
+		c := text[i]
+		if c == ' ' || c == '\t' {
+			last_break = i
+		}
+
+		candidate := text[line_start:i + 1]
+		if measure_text(candidate, pixel_height).size[0] <= max_width {
+			line_end = i + 1
+			continue
+		}
+
+		if last_break >= line_start {
+			append_displayable_text_line(lines, text[line_start:last_break], pixel_height)
+			line_start = last_break + 1
+			for line_start < len(text) && text[line_start] == ' ' {
+				line_start += 1
+			}
+			i = line_start - 1
+			line_end = line_start
+			last_break = -1
+		} else if line_end > line_start {
+			append_displayable_text_line(lines, text[line_start:line_end], pixel_height)
+			line_start = line_end
+			i = line_start - 1
+			last_break = -1
+		} else {
+			append_displayable_text_line(lines, text[line_start:i + 1], pixel_height)
+			line_start = i + 1
+			line_end = line_start
+			last_break = -1
+		}
+	}
+
+	if line_start < len(text) {
+		append_displayable_text_line(lines, text[line_start:], pixel_height)
+	}
+}
+
+@(private = "file")
+displayable_text_from_string :: proc(
+	text: string,
+	pixel_height, max_width: f32,
+	wrapping: Draw_Text_Wrapping,
+	allocator: mem.Allocator,
+) -> Displayable_Text {
+	out: Displayable_Text
+	out.line_height = font_line_height(pixel_height)
+	if len(text) == 0 {
+		return out
+	}
+
+	lines := make([dynamic]Displayable_Text_Line, 0, 1, allocator) or_else panic(
+		"failed to allocate displayable text lines",
+	)
+
+	if wrapping == .Nil {
+		measure := measure_text(text, pixel_height)
+		append_or_panic(&lines, Displayable_Text_Line{text = text, measure = measure})
+		out.lines = lines[:]
+		out.measurement = measure
+		return out
+	}
+
+	range_start := 0
+	for i := 0; i <= len(text); i += 1 {
+		if i != len(text) && text[i] != '\n' {
+			continue
+		}
+
+		range_text := text[range_start:i]
+		#partial switch wrapping {
+		case .Wrap:
+			append_wrapped_text_range(&lines, range_text, pixel_height, max_width)
+		case .Truncate:
+			append_displayable_text_line(
+				&lines,
+				truncate_text_to_width(range_text, pixel_height, max_width),
+				pixel_height,
+			)
+		}
+		range_start = i + 1
+	}
+
+	max_width := f32(0)
+	min_y := f32(0)
+	max_y := f32(0)
+	has_glyph_bounds := false
+	for line, line_index in lines {
+		max_width = max(max_width, line.measure.size[0])
+		line_y := f32(line_index) * out.line_height
+		line_min_y := line_y + line.measure.bounds_offset[1]
+		line_max_y := line_min_y + line.measure.size[1]
+		if !has_glyph_bounds {
+			min_y = line_min_y
+			max_y = line_max_y
+			has_glyph_bounds = true
+		} else {
+			min_y = min(min_y, line_min_y)
+			max_y = max(max_y, line_max_y)
+		}
+	}
+	out.lines = lines[:]
+	if has_glyph_bounds {
+		out.measurement.size = {max_width, max_y - min_y}
+		out.measurement.bounds_offset = {0, min_y}
+		out.measurement.baseline_y = -min_y
+	}
+	return out
+}
+
+@(private = "file")
 draw_text_at_pos :: proc(
 	quads: ^[dynamic]Quad,
 	text: string,
@@ -978,30 +1180,60 @@ draw_text_at_pos :: proc(
 	}
 }
 
+@(private = "file")
+draw_displayable_text_in_rect :: proc(
+	quads: ^[dynamic]Quad,
+	displayable: Displayable_Text,
+	bounds: Rect,
+	pixel_height: f32,
+	alignment: Draw_Text_Alignment,
+	color: Color,
+) {
+	if len(displayable.lines) == 0 {
+		return
+	}
+
+	baseline_y := bounds.y + displayable.measurement.baseline_y
+	switch alignment {
+	case .Center, .Left:
+		baseline_y += (bounds.h - displayable.measurement.size[1]) / 2
+	case .Top_Left:
+	}
+
+	for line, line_index in displayable.lines {
+		pos := [2]f32{bounds.x, baseline_y + f32(line_index) * displayable.line_height}
+		switch alignment {
+		case .Center:
+			pos[0] += (bounds.w - line.measure.size[0]) / 2 - line.measure.bounds_offset[0]
+		case .Left, .Top_Left:
+			pos[0] -= line.measure.bounds_offset[0]
+		}
+		draw_text_at_pos(quads, line.text, pos, pixel_height, color)
+	}
+}
+
+@(private = "file")
 draw_text_in_rect :: proc(
 	quads: ^[dynamic]Quad,
 	text: string,
 	bounds: Rect,
-	positioning: Text_Positioning,
 	pixel_height: f32,
+	alignment: Draw_Text_Alignment,
+	wrapping: Draw_Text_Wrapping,
 	color: Color,
+	allocator: mem.Allocator,
 ) {
-	measure := measure_text(text, pixel_height)
-	pos := rect_corner(bounds)
-
-	if positioning == .Center {
-		pos[0] += (bounds.w - measure.size[0]) / 2 - measure.bounds_offset[0]
-		pos[1] += (bounds.h - measure.size[1]) / 2 + measure.baseline_y
-	}
-
-	draw_text_at_pos(quads, text, pos, pixel_height, color)
+	displayable := displayable_text_from_string(text, pixel_height, bounds.w, wrapping, allocator)
+	draw_displayable_text_in_rect(quads, displayable, bounds, pixel_height, alignment, color)
 }
 
+@(private = "file")
 interpret_game_draw_commands :: proc(
 	out: ^[dynamic]Quad,
 	draw_commands: []Draw_Command,
 	camera: Camera,
 	framebuffer_size: [2]f32,
+	allocator: mem.Allocator,
 ) {
 	for cmd in draw_commands {
 		sprite := get_sprite_by_name(cmd.texture.name)
@@ -1035,9 +1267,11 @@ interpret_game_draw_commands :: proc(
 			out,
 			cmd.text.text,
 			screen_bounds,
-			.Center,
 			cmd.text.pixel_height,
+			cmd.text.alignment,
+			cmd.text.wrapping,
 			cmd.text.color,
+			allocator,
 		)
 	}
 }
@@ -1050,7 +1284,7 @@ draw_commands :: proc(commands: []Draw_Command, camera: Camera, framebuffer_size
 		make([dynamic]Quad, 0, DEFAULT_MAX_GL_QUADS, scratch.arena) or_else panic(
 			"failed to allocate quads",
 		)
-	interpret_game_draw_commands(&quads, commands, camera, framebuffer_size)
+	interpret_game_draw_commands(&quads, commands, camera, framebuffer_size, scratch.arena)
 
 	batches := quad_batch_calculate(quads[:], scratch.arena)
 	for batch in batches {
@@ -1140,6 +1374,7 @@ push_sprite :: proc(name: string, texture: Texture, region: Rect) {
 	append_or_panic(&GL.sprites, Sprite{name = cloned_name, texture = texture, bounds = st_bounds})
 }
 
+@(private = "file")
 get_sprite_by_name :: proc(name: string) -> Sprite {
 	for sprite in GL.sprites {
 		if sprite.name == name {

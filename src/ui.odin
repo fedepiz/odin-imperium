@@ -396,7 +396,7 @@ ui_text_wrapping :: proc(layout: ui_Text_Layout) -> Draw_Text_Wrapping {
 	if layout == .Wrap {
 		return .Wrap
 	}
-	return .Truncate
+	return .Nil
 }
 
 ui_draw_command_from_widget :: proc(widget: ^ui_Widget) -> Draw_Command {

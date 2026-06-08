@@ -231,7 +231,7 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 		if this.id == ctx.selected_id {
 			panel: Gui_Selected_Panel
 			panel.visible = true
-			panel.name = this.labels[.Name]
+			panel.info_text = this.labels[.Name]
 			out.selected_panel = panel
 		}
 
@@ -285,7 +285,6 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 				}
 				label_cmd.text.pixel_height = label_pixel_height
 				label_cmd.text.alignment = .Center
-				label_cmd.text.wrapping = .Truncate
 
 				append(&out.draw_commands, label_cmd)
 			}
