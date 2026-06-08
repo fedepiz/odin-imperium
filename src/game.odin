@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:math"
 import "core:mem"
+import "core:time"
 
 Camera :: struct {
 	center:      [2]f32,
@@ -307,7 +308,12 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		ctx.selected_id = GAME.selected_id
 		ctx.world_graph = GAME.world_graph
 
+		watch: time.Stopwatch
+		time.stopwatch_start(&watch)
 		things_simulate(ctx)
+		time.stopwatch_stop(&watch)
+		elapsed := time.stopwatch_duration(watch)
+		// fmt.printfln("sim time: %v", elapsed)
 	}
 
 	tick_output: Tick_Output
