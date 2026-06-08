@@ -116,7 +116,7 @@ thing_load_set_label :: proc(
 	return true
 }
 
-things_load_csv :: proc(path: string, things: ^Things) -> bool {
+things_setup :: proc(path: string, things: ^Things) -> bool {
 	things_init(things)
 
 	scratch := get_scratch()

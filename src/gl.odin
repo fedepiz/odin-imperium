@@ -41,9 +41,12 @@ rect_corner :: proc(rect: Rect) -> [2]f32 {
 	return {rect.x, rect.y}
 }
 
-@(private = "file")
 rect_size :: proc(rect: Rect) -> [2]f32 {
 	return {rect.w, rect.h}
+}
+
+rect_from_pos_and_size :: proc(pos: [2]f32, size: [2]f32) -> Rect {
+	return {pos.x, pos.y, size.x, size.y}
 }
 
 color_rect_uniform :: proc(color: Color) -> Color_Rect {
@@ -965,7 +968,10 @@ append_displayable_text_line :: proc(
 	text: string,
 	pixel_height: f32,
 ) {
-	append_or_panic(lines, Displayable_Text_Line{text = text, measure = measure_text(text, pixel_height)})
+	append_or_panic(
+		lines,
+		Displayable_Text_Line{text = text, measure = measure_text(text, pixel_height)},
+	)
 }
 
 @(private = "file")
@@ -1053,9 +1059,10 @@ displayable_text_from_string :: proc(
 		return out
 	}
 
-	lines := make([dynamic]Displayable_Text_Line, 0, 1, allocator) or_else panic(
-		"failed to allocate displayable text lines",
-	)
+	lines :=
+		make([dynamic]Displayable_Text_Line, 0, 1, allocator) or_else panic(
+			"failed to allocate displayable text lines",
+		)
 
 	if wrapping == .Nil {
 		measure := measure_text(text, pixel_height)

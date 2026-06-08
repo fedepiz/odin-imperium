@@ -307,12 +307,9 @@ ui_center_child_on_axis :: proc(parent, child: ^ui_Widget, axis: ui_Axis) -> f32
 	return difference * 0.5 * parent.center_axis[int(axis)]
 }
 
-ui_layout_recursive :: proc(widget: ^ui_Widget, cursor_x, cursor_y: f32, parent_clip: Rect) {
-	x := cursor_x + widget.absolute_pos[int(ui_Axis.X)]
-	y := cursor_y + widget.absolute_pos[int(ui_Axis.Y)]
-
-	widget.computed_pos[int(ui_Axis.X)] = x
-	widget.computed_pos[int(ui_Axis.Y)] = y
+ui_layout_recursive :: proc(widget: ^ui_Widget, cursor: [2]f32, parent_clip: Rect) {
+	widget.computed_pos =
+		cursor + widget.absolute_pos * (rect_size(parent_clip) - widget.computed_size)
 
 	clip := parent_clip
 	if widget.clip_to_bounds {
@@ -320,23 +317,21 @@ ui_layout_recursive :: proc(widget: ^ui_Widget, cursor_x, cursor_y: f32, parent_
 	}
 	widget.computed_clip = clip
 
-	x -= widget.child_offset[int(ui_Axis.X)]
-	y -= widget.child_offset[int(ui_Axis.Y)]
+	cursor := widget.computed_pos - widget.child_offset
 
 	for child := widget.first_child; child != nil; child = child.sibling {
-		child_x := x + ui_center_child_on_axis(widget, child, .X)
-		child_y := y + ui_center_child_on_axis(widget, child, .Y)
-		ui_layout_recursive(child, child_x, child_y, clip)
-		x += child.computed_size[int(ui_Axis.X)] * widget.layout_axes[int(ui_Axis.X)]
-		y += child.computed_size[int(ui_Axis.Y)] * widget.layout_axes[int(ui_Axis.Y)]
+		child_x := cursor.x + ui_center_child_on_axis(widget, child, .X)
+		child_y := cursor.y + ui_center_child_on_axis(widget, child, .Y)
+		ui_layout_recursive(child, {child_x, child_y}, clip)
+		cursor += child.computed_size * widget.layout_axes
 	}
 }
 
-ui_layout_positions :: proc() {
+ui_layout_positions :: proc(frame_buffer: Rect) {
 	for i := 0; i < UI.widget_count; i += 1 {
 		widget := &UI.widgets[i]
 		if widget.parent == nil {
-			ui_layout_recursive(widget, 0, 0, ui_rect_infinity())
+			ui_layout_recursive(widget, {0, 0}, frame_buffer)
 		}
 	}
 }
@@ -486,10 +481,10 @@ ui_begin_frame :: proc(input: Frame_Input) {
 	UI.active_widget = nil
 }
 
-ui_end_frame :: proc(allocator: mem.Allocator) -> []Draw_Command {
+ui_end_frame :: proc(allocator: mem.Allocator, frame_buffer: Rect) -> []Draw_Command {
 	ui_calculate_sizes()
 	ui_update_widget_cache()
-	ui_layout_positions()
+	ui_layout_positions(frame_buffer)
 
 	commands :=
 		make([dynamic]Draw_Command, 0, UI.widget_count, allocator) or_else panic(

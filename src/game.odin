@@ -210,31 +210,31 @@ game_build_ui :: proc(
 	ui_style_push_color(allocator, .Panel_Fill, ui_base_color)
 	ui_style_push_color(allocator, .Panel_Border, ui_border)
 
-	{
-		_ = ui_panel_begin("###Panel", {0, 0})
-		ui_set_texture("widget", 0.25)
-		ui_heading("Test Panel", 11)
-		ui_vsep()
-		{
-			ui_row_begin()
-			ui_hsep()
-			_ = ui_button("Hello", 4)
-			ui_hsep()
-			_ = ui_button("Bye", 4)
-			ui_hsep()
-			ui_widget_end()
-		}
-		ui_space(0, 1)
-		{
-			ui_row_begin()
-			ui_hsep()
-			_ = ui_button("Goodbye", 4)
-			ui_hsep()
-			ui_widget_end()
-		}
-		ui_vsep()
-		ui_widget_end()
-	}
+	// {
+	// 	_ = ui_panel_begin("###Panel", {0.5, 0.5})
+	// 	ui_set_texture("widget", 0.25)
+	// 	ui_heading("Test Panel", 11)
+	// 	ui_vsep()
+	// 	{
+	// 		ui_row_begin()
+	// 		ui_hsep()
+	// 		_ = ui_button("Hello", 4)
+	// 		ui_hsep()
+	// 		_ = ui_button("Bye", 4)
+	// 		ui_hsep()
+	// 		ui_widget_end()
+	// 	}
+	// 	ui_space(0, 1)
+	// 	{
+	// 		ui_row_begin()
+	// 		ui_hsep()
+	// 		_ = ui_button("Goodbye", 4)
+	// 		ui_hsep()
+	// 		ui_widget_end()
+	// 	}
+	// 	ui_vsep()
+	// 	ui_widget_end()
+	// }
 
 	if selected_panel.visible {
 		_ = ui_panel_begin("###SELECTED_PANEL", {0, 0})
@@ -253,7 +253,10 @@ game_build_ui :: proc(
 	}
 
 	out.camera = GAME.camera
-	out.ui_draw_commands = ui_end_frame(allocator)
+	out.ui_draw_commands = ui_end_frame(
+		allocator,
+		rect_from_pos_and_size({}, input.framebuffer_size),
+	)
 
 	return ui_is_mouse_over_area()
 }
@@ -279,18 +282,19 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		input.framebuffer_size,
 	)
 
+	if GAME.tick_num == 0 {
+		old_things := &GAME.things[1 - GAME.tick_num % 2]
+		if !things_setup(THING_INIT_PATH, old_things) {
+			panic("failed to load initial things")
+		}
+		GAME.tick_num += 1
+	}
 
 	for tick_idx in 0 ..< num_ticks {
 		GAME.tick_num += 1
 		// Tick here
 		new_things := &GAME.things[GAME.tick_num % 2]
 		old_things := &GAME.things[1 - GAME.tick_num % 2]
-
-		if GAME.tick_num == 1 {
-			if !things_load_csv(THING_INIT_PATH, old_things) {
-				panic("failed to load initial things")
-			}
-		}
 
 		phase_arena: mem.Arena
 		mem.arena_init(&phase_arena, new_things.blob[:])
