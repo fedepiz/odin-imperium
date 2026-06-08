@@ -9,10 +9,14 @@ THING_INIT_PATH :: "data/init.csv"
 
 @(private = "file")
 Thing_Load_Ctx :: struct {
-	alloc:   mem.Allocator,
-	ids:     map[string]ThId,
-	current: ^Thing,
-	next_ix: u16,
+	persistent_alloc:   mem.Allocator,
+	thing_alloc:        mem.Allocator,
+	pass_alloc:         mem.Allocator,
+	ids:                map[string]ThId,
+	// Maps strings (as loaded) to strings in long etrm allocation
+	persistent_strings: map[string]string,
+	current:            ^Thing,
+	next_ix:            u16,
 }
 
 @(private = "file")
@@ -111,12 +115,24 @@ thing_load_set_label :: proc(
 		return false
 	}
 
-	ctx.current.labels[label] =
-		strings.clone(row[2], ctx.alloc) or_else panic("failed to allocate thing label")
+
+	persistent, exists := ctx.persistent_strings[row[2]]
+	if !exists {
+		// Clone to persistent memory and insert
+		persistent = strings.clone(row[2], ctx.persistent_alloc) or_else panic(
+			"failed to allocate persistent thing label",
+		)
+		key := strings.clone(row[2], ctx.pass_alloc) or_else panic(
+			"failed to allocate persistent thing label key",
+		)
+		map_insert(&ctx.persistent_strings, key, persistent)
+	}
+
+	ctx.current.labels[label] = persistent
 	return true
 }
 
-things_setup :: proc(path: string, things: ^Things) -> bool {
+things_setup :: proc(path: string, things: ^Things, persistent_alloc: mem.Allocator) -> bool {
 	things_init(things)
 
 	scratch := get_scratch()
@@ -130,9 +146,12 @@ things_setup :: proc(path: string, things: ^Things) -> bool {
 	blob_arena: mem.Arena
 	mem.arena_init(&blob_arena, things.blob[:])
 	ctx := Thing_Load_Ctx {
-		alloc   = mem.arena_allocator(&blob_arena),
-		ids     = make(map[string]ThId, scratch.arena),
-		next_ix = 1,
+		persistent_alloc   = persistent_alloc,
+		thing_alloc        = mem.arena_allocator(&blob_arena),
+		pass_alloc         = scratch.arena,
+		persistent_strings = make(map[string]string, scratch.arena),
+		ids                = make(map[string]ThId, scratch.arena),
+		next_ix            = 1,
 	}
 
 	for row, row_idx in records {

@@ -91,13 +91,31 @@ Game_Timer :: struct {
 	speed:       f32,
 }
 
+@(private = "file")
+PERSISTENT_BLOB_SIZE :: 10_000_000
+
+@(private = "file")
+Persistent_Memory :: struct {
+	blob:  [PERSISTENT_BLOB_SIZE]byte,
+	arena: mem.Arena,
+	alloc: mem.Allocator,
+}
+
+@(private = "file")
+persistent_memory_init :: proc(memory: ^Persistent_Memory) {
+	mem.arena_init(&memory.arena, memory.blob[:])
+	memory.alloc = mem.arena_allocator(&memory.arena)
+}
+
+
 Game_State :: struct {
-	timer:       Game_Timer,
-	camera:      Camera,
-	world_graph: World_Graph,
-	tick_num:    u64,
-	things:      [2]Things,
-	selected_id: ThId,
+	persistent_memory: Persistent_Memory,
+	timer:             Game_Timer,
+	camera:            Camera,
+	world_graph:       World_Graph,
+	tick_num:          u64,
+	things:            [2]Things,
+	selected_id:       ThId,
 }
 
 GAME: Game_State
@@ -174,6 +192,7 @@ camera_update :: proc(camera: ^Camera, dtranslate: [2]f32, dzoom: f32, framebuff
 game_init :: proc(world_graph: World_Graph) {
 	ui_init()
 	GAME = {}
+	persistent_memory_init(&GAME.persistent_memory)
 	GAME.timer.speed = 120
 	GAME.camera.world_to_px = 10
 	GAME.camera.zoom = 1
@@ -266,7 +285,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	num_ticks: int
 
 	{
-		speed_mod: f32 = !input.speed_up ? 1 : 5
+		speed_mod: f32 = !input.speed_up ? 1 : 2
 		GAME.timer.accumulated += input.delta * GAME.timer.speed * speed_mod
 		num_ticks = int(math.floor(GAME.timer.accumulated))
 		GAME.timer.accumulated = GAME.timer.accumulated - f32(num_ticks)
@@ -285,7 +304,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 
 	if GAME.tick_num == 0 {
 		old_things := &GAME.things[1 - GAME.tick_num % 2]
-		if !things_setup(THING_INIT_PATH, old_things) {
+		if !things_setup(THING_INIT_PATH, old_things, GAME.persistent_memory.alloc) {
 			panic("failed to load initial things")
 		}
 		GAME.tick_num += 1
@@ -308,12 +327,12 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		ctx.selected_id = GAME.selected_id
 		ctx.world_graph = GAME.world_graph
 
-		watch: time.Stopwatch
-		time.stopwatch_start(&watch)
+		// watch: time.Stopwatch
+		// time.stopwatch_start(&watch)
 		things_simulate(ctx)
-		time.stopwatch_stop(&watch)
-		elapsed := time.stopwatch_duration(watch)
-		// fmt.printfln("sim time: %v", elapsed)
+		// time.stopwatch_stop(&watch)
+		// elapsed := time.stopwatch_duration(watch)
+		// fmt.printfln("sim tick: %v, time: %v", ctx.tick_num, elapsed)
 	}
 
 	tick_output: Tick_Output

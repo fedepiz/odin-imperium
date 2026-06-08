@@ -23,4 +23,5 @@ var,Pos_X,300
 var,Pos_Y,250
 var,Size,1
 var,Layer,1
+var,VisionRadius,10
 flag,IsDebug

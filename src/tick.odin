@@ -2,8 +2,8 @@ package main
 
 import "core:math"
 import "core:mem"
+import "core:slice"
 import "core:sort"
-import "core:strings"
 
 THINGS_BLOB_SIZE :: 20_000_000
 
@@ -51,13 +51,15 @@ Var :: enum {
 	Pos_Y,
 	Size,
 	Layer,
+	VisionRadius,
 }
 
 VAR_NAMES := [Var]string {
-	.Pos_X = "Pos_X",
-	.Pos_Y = "Pos_Y",
-	.Size  = "Size",
-	.Layer = "Layer",
+	.Pos_X        = "Pos_X",
+	.Pos_Y        = "Pos_Y",
+	.Size         = "Size",
+	.Layer        = "Layer",
+	.VisionRadius = "VisionRadius",
 }
 
 Flag :: enum {
@@ -139,27 +141,47 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 	scratch := get_scratch()
 	defer release_scratch(scratch)
 
+	// Calculate spatial map on old things
+	spatial_map: Spatial_Map = spatial_map_init(
+		ctx.alloc,
+		ctx.world_graph.grid_size.x,
+		ctx.world_graph.grid_size.y,
+		32,
+	)
+
+	for ix in 1 ..< NUM_THINGS {
+		old := ctx.old_things[ix]
+		if !thid_is_valid(old.id) || old.vars[.Size] <= 0 do continue
+		pos := thing_pos(old)
+		spatial_map_insert(spatial_map, old.id, pos)
+	}
+
+
 	// "Write pass"
 	for ix in 1 ..< NUM_THINGS {
 		old := ctx.old_things[ix]
 		new := &ctx.new_things[ix]
 
+		// Basic copy
 		new.id = old.id
-
-		// Assume most lables are copied most of the time
-		for label in Label {
-			prev := old.labels[label]
-			if len(prev) != 0 {
-				new.labels[label] = strings.clone(prev, ctx.alloc)
-			}
-		}
+		new.labels = old.labels
 		new.vars = old.vars
 		new.flags = old.flags
 
 		current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
 		move_to_pos: [2]f32 = current_pos
 
+		// Detections and nearby
+		detections := spatial_map_lookup(
+			scratch.arena,
+			spatial_map,
+			thing_pos(old),
+			// Detection is either the vision, or the size for collisions
+			max(old.vars[.VisionRadius], old.vars[.Size]),
+		)
+
 		{
+			// Resolve movement target
 			movement_target: ThId
 			if old.vars[.Size] == 1 {
 				// Target thid = 3
@@ -178,19 +200,130 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 
 
 		// Interpolate positions (temporary idea)
-		{
-			speed: f32 = new.vars[.Size] <= 1 ? 1 : 0
-			if speed >= 0 {
-				cell_id := world_graph_cell_of_thing(ctx, new.id)
-				// Adjust speed by traversal speed.
-				// Give a maximum penalty of 90%, to make sure we don't get stuck when 'clipping edges'
-				speed *= max(ctx.world_graph.cells[cell_id].traverse_speed, 0.1)
-				next_pos := calculate_next_position(current_pos, move_to_pos, speed)
-				new.vars[.Pos_X] = next_pos.x
-				new.vars[.Pos_Y] = next_pos.y
+		speed: f32 = new.vars[.Size] <= 1 ? 1 : 0
+		if speed >= 0 && move_to_pos != current_pos {
+			cell_id := world_graph_cell_of_thing(ctx, new.id)
+			// Adjust speed by traversal speed.
+			// Give a maximum penalty of 90%, to make sure we don't get stuck when 'clipping edges'
+			speed *= max(ctx.world_graph.cells[cell_id].traverse_speed, 0.1)
+			next_pos := calculate_next_position(current_pos, move_to_pos, speed)
+			new.vars[.Pos_X] = next_pos.x
+			new.vars[.Pos_Y] = next_pos.y
+		}
+	}
+}
+
+@(private = "file")
+Spatial_Map :: struct {
+	width:       int,
+	height:      int,
+	bucket_size: int,
+	buckets:     [][dynamic]Spatial_Map_Entry,
+}
+
+@(private = "file")
+Spatial_Map_Entry :: struct {
+	id:  ThId,
+	pos: [2]f32,
+}
+
+@(private = "file")
+spatial_map_init :: proc(
+	alloc: mem.Allocator,
+	width, height: int,
+	bucket_size: int,
+) -> Spatial_Map {
+	smap: Spatial_Map
+	smap.width = width / bucket_size + 1
+	smap.height = height / bucket_size + 1
+	smap.bucket_size = bucket_size
+	smap.buckets = make_slice([][dynamic]Spatial_Map_Entry, smap.width * smap.height, alloc)
+	for idx in 0 ..< len(smap.buckets) {
+		smap.buckets[idx] = make([dynamic]Spatial_Map_Entry, 0, 0, alloc)
+	}
+	return smap
+}
+
+@(private = "file")
+spatial_map_bucket_id :: proc(sm: Spatial_Map, pos: [2]f32) -> int {
+	x := int(math.floor(pos.x / f32(sm.bucket_size)))
+	y := int(math.floor(pos.y / f32(sm.bucket_size)))
+	x = clamp(x, 0, sm.width - 1)
+	y = clamp(y, 0, sm.height - 1)
+	return y * sm.width + x
+}
+
+@(private = "file")
+spatial_map_insert :: proc(sm: Spatial_Map, id: ThId, pos: [2]f32) {
+	bucket_id := spatial_map_bucket_id(sm, pos)
+	bucket := &sm.buckets[bucket_id]
+	append(bucket, Spatial_Map_Entry{id, pos})
+}
+
+@(private = "file")
+Spatial_Map_Hit :: struct {
+	id:    ThId,
+	pos:   [2]f32,
+	range: f32,
+}
+
+@(private = "file")
+spatial_map_lookup :: proc(
+	arena: mem.Allocator,
+	sm: Spatial_Map,
+	focus: [2]f32,
+	range: f32,
+) -> []Spatial_Map_Hit {
+	if range <= 0.0 {return {}}
+	// Lookup spatial map buckets and return all the results
+	// (Pre-count the bins contents, allocate the return dynamic array, and return slice)
+	radius_sq := range * range
+	min_x := clamp(int(math.floor((focus.x - range) / f32(sm.bucket_size))), 0, sm.width - 1)
+	max_x := clamp(int(math.floor((focus.x + range) / f32(sm.bucket_size))), 0, sm.width - 1)
+	min_y := clamp(int(math.floor((focus.y - range) / f32(sm.bucket_size))), 0, sm.height - 1)
+	max_y := clamp(int(math.floor((focus.y + range) / f32(sm.bucket_size))), 0, sm.height - 1)
+
+	num_hits := 0
+	for y in min_y ..= max_y {
+		for x in min_x ..= max_x {
+			bucket_id := y * sm.width + x
+			for entry in sm.buckets[bucket_id] {
+				delta := entry.pos - focus
+				dist_sq := delta.x * delta.x + delta.y * delta.y
+				if dist_sq <= radius_sq {
+					num_hits += 1
+				}
 			}
 		}
 	}
+
+	// There are no hits, lets leave
+	if num_hits == 0 {return {}}
+
+	hits :=
+		make([]Spatial_Map_Hit, num_hits, arena) or_else panic(
+			"failed to allocate spatial map hits",
+		)
+	write_idx := 0
+	for y in min_y ..= max_y {
+		for x in min_x ..= max_x {
+			bucket_id := y * sm.width + x
+			for entry in sm.buckets[bucket_id] {
+				delta := entry.pos - focus
+				dist_sq := delta.x * delta.x + delta.y * delta.y
+				if dist_sq <= radius_sq {
+					hits[write_idx] = Spatial_Map_Hit {
+						id    = entry.id,
+						pos   = entry.pos,
+						range = math.sqrt(dist_sq),
+					}
+					write_idx += 1
+				}
+			}
+		}
+	}
+
+	return hits
 }
 
 @(private = "file")
@@ -217,20 +350,29 @@ pathfind :: proc(ctx: Sim_Ctx, old: Thing, target: Thing) -> ([2]f32, Nav_Path) 
 	// Check if we currently have a path cached towards the current destination
 	old_path_len := len(old.path.steps)
 	if old_path_len > 0 && old.path.steps[old_path_len - 1] == end_id {
-		cell: World_Cell_Id
+		next_cell: World_Cell_Id
+		found_current_cell := false
 		for idx in 0 ..< len(old.path.steps) - 1 {
 			if old.path.steps[idx] == start_id {
-				cell = old.path.steps[idx + 1]
+				next_cell = old.path.steps[idx + 1]
+				found_current_cell = true
+				break
 			}
 		}
-		dest := cast([2]f32)(world_graph_id_to_pos(ctx.world_graph, cell))
 
-		// We used this cached path, so we persist it onto the next frame
-		new_path: Nav_Path = {
-			steps = old.path.steps,
+		if found_current_cell {
+			dest := cast([2]f32)(world_graph_id_to_pos(ctx.world_graph, next_cell))
+
+			// We used this cached path, so we persist it onto the next frame
+			new_path: Nav_Path = {
+				steps = slice.clone(
+					old.path.steps,
+					ctx.alloc,
+				) or_else panic("failed to allocate cached path"),
+			}
+
+			return dest, new_path
 		}
-
-		return dest, new_path
 	}
 
 	path := world_graph_pathfind(ctx.alloc, ctx.world_graph, start_id, end_id)
@@ -265,7 +407,6 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 		if len(this.labels[.Name]) != 0 do num_labels += 1
 		if this.vars[.Size] != 0 do num_visible += 1
 	}
-
 
 	out.draw_commands = make([dynamic]Draw_Command, 0, num_visible + num_labels, arena)
 	out.click_boxes = make([dynamic]Click_Box, 0, num_visible, arena)
