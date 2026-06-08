@@ -25,3 +25,12 @@ var,Size,1
 var,Layer,1
 var,VisionRadius,10
 flag,IsDebug
+spawn,raginaldus
+label,Sprite,soldier
+label,Name,Raginwaldus
+var,Pos_X,300
+var,Pos_Y,245
+var,Size,1
+var,Layer,1
+var,VisionRadius,10
+flag,IsDebug

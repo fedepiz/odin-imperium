@@ -137,7 +137,16 @@ calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32
 	return current + change
 }
 
+
+CHUNK_SIZE :: 1000
+NUM_CHUNKS :: NUM_THINGS / CHUNK_SIZE
+
+chunk_of_id :: #force_inline proc(id: ThId) -> int {
+	return int(thid_parts(id).ix) / CHUNK_SIZE
+}
+
 things_simulate :: proc(ctx: Sim_Ctx) {
+	assert(NUM_THINGS % CHUNK_SIZE == 0)
 	scratch := get_scratch()
 	defer release_scratch(scratch)
 
@@ -157,57 +166,71 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 	}
 
 	// "Write pass"
-	for ix in 1 ..< NUM_THINGS {
-		old := ctx.old_things[ix]
-		new := &ctx.new_things[ix]
+	for chunk_idx in 0 ..< NUM_CHUNKS {
+		chunk_start := max(1, chunk_idx * CHUNK_SIZE)
+		chunk_end := (chunk_idx + 1) * CHUNK_SIZE
+		for ix in chunk_start ..< chunk_end {
+			old := ctx.old_things[ix]
+			new := &ctx.new_things[ix]
 
-		// Basic copy
-		new.id = old.id
-		new.labels = old.labels
-		new.vars = old.vars
-		new.flags = old.flags
+			// Basic copy
+			new.id = old.id
+			new.labels = old.labels
+			new.vars = old.vars
+			new.flags = old.flags
 
-		current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
-		move_to_pos: [2]f32 = current_pos
+			current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
+			move_to_pos: [2]f32 = current_pos
 
-		// Detections and nearby
-		detections := spatial_map_lookup(
-			scratch.arena,
-			spatial_map,
-			thing_pos(old),
-			// Detection is either the vision, or the size for collisions
-			max(old.vars[.VisionRadius], old.vars[.Size]),
-		)
+			// Detections and nearby
+			detections := spatial_map_lookup(
+				scratch.arena,
+				spatial_map,
+				thing_pos(old),
+				// Detection is either the vision, or the size for collisions
+				max(old.vars[.VisionRadius], old.vars[.Size]),
+			)
 
-		{
-			// Resolve movement target
-			movement_target: ThId
-			if old.vars[.Size] == 1 {
-				// Target thid = 3
-				movement_target = thid_make(3, 1)
+			{
+				// Resolve movement target
+				movement_target: ThId
+				if old.vars[.Size] == 1 {
+					if old.labels[.Name] == "Ansoaldus" {
+						// Target thid = 3
+						movement_target = thid_make(3, 1)
+					} else if old.labels[.Name] == "Raginwaldus" {
+						if ctx.tick_num < 500 {
+							movement_target = thid_make(4, 1)
+						} else {
+							movement_target = thid_make(2, 1)
+
+						}
+					}
+				}
+
+				if thid_is_valid(movement_target) {
+					target := get_thing(ctx, movement_target)
+					next_pos, cached_path := pathfind(ctx, old, target^)
+					move_to_pos = next_pos
+					new.path = cached_path
+				}
+
+				new.movement_target = movement_target
 			}
 
-			if thid_is_valid(movement_target) {
-				target := get_thing(ctx, movement_target)
-				next_pos, cached_path := pathfind(ctx, old, target^)
-				move_to_pos = next_pos
-				new.path = cached_path
+
+			// Interpolate positions (temporary idea)
+			speed: f32 = new.vars[.Size] <= 1 ? 1 : 0
+			if speed >= 0 && move_to_pos != current_pos {
+				cell_id := world_graph_cell_of_thing(ctx, new.id)
+				// Adjust speed by traversal speed.
+				// Give a maximum penalty of 90%, to make sure we don't get stuck when 'clipping edges'
+				speed *= max(ctx.world_graph.cells[cell_id].traverse_speed, 0.1)
+				next_pos := calculate_next_position(current_pos, move_to_pos, speed)
+				new.vars[.Pos_X] = next_pos.x
+				new.vars[.Pos_Y] = next_pos.y
 			}
 
-			new.movement_target = movement_target
-		}
-
-
-		// Interpolate positions (temporary idea)
-		speed: f32 = new.vars[.Size] <= 1 ? 1 : 0
-		if speed >= 0 && move_to_pos != current_pos {
-			cell_id := world_graph_cell_of_thing(ctx, new.id)
-			// Adjust speed by traversal speed.
-			// Give a maximum penalty of 90%, to make sure we don't get stuck when 'clipping edges'
-			speed *= max(ctx.world_graph.cells[cell_id].traverse_speed, 0.1)
-			next_pos := calculate_next_position(current_pos, move_to_pos, speed)
-			new.vars[.Pos_X] = next_pos.x
-			new.vars[.Pos_Y] = next_pos.y
 		}
 	}
 }
@@ -398,7 +421,6 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 	num_labels := 0
 	num_visible := 0
 
-
 	// Pass #1: Inspection
 	for ix in 1 ..< NUM_THINGS {
 		this := &ctx.things[ix]
@@ -489,3 +511,4 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 
 	return out
 }
+
