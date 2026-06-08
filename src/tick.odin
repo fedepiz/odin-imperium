@@ -83,13 +83,12 @@ Things :: struct {
 	entries: [NUM_THINGS]Thing,
 }
 
-Tick_Ctx :: struct {
+Sim_Ctx :: struct {
 	tick_num:    u64,
 	alloc:       mem.Allocator,
 	old_things:  []Thing,
 	new_things:  []Thing,
 	selected_id: ThId,
-	camera:      Camera,
 	world_graph: World_Graph,
 }
 
@@ -99,7 +98,7 @@ Tick_Output :: struct {
 	selected_panel: Gui_Selected_Panel,
 }
 
-get_thing :: proc(ctx: Tick_Ctx, id: ThId) -> ^Thing {
+get_thing :: proc(ctx: Sim_Ctx, id: ThId) -> ^Thing {
 	if thid_is_valid(id) {
 		parts := thid_parts(id)
 		thing := &ctx.old_things[parts.ix]
@@ -108,7 +107,7 @@ get_thing :: proc(ctx: Tick_Ctx, id: ThId) -> ^Thing {
 	return &ctx.old_things[0]
 }
 
-world_graph_cell_of_thing :: proc(ctx: Tick_Ctx, id: ThId) -> World_Cell_Id {
+world_graph_cell_of_thing :: proc(ctx: Sim_Ctx, id: ThId) -> World_Cell_Id {
 	vars := get_thing(ctx, id).vars
 	pos: [2]int = {int(math.round(vars[.Pos_X])), int(math.round(vars[.Pos_Y]))}
 	return world_graph_pos_to_id(ctx.world_graph, pos)
@@ -137,14 +136,11 @@ calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32
 	return current + change
 }
 
-things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
-	out: Tick_Output
-	scratch := get_scratch(arena)
+things_simulate :: proc(ctx: Sim_Ctx) {
+	scratch := get_scratch()
 	defer release_scratch(scratch)
 
 	// "Write pass"
-	num_visible := 0
-	num_labels := 0
 	for ix in 1 ..< NUM_THINGS {
 		old := ctx.old_things[ix]
 		new := &ctx.new_things[ix]
@@ -189,8 +185,6 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 			new.movement_target = movement_target
 		}
 
-		if len(new.labels[.Name]) != 0 do num_labels += 1
-		if new.vars[.Size] != 0 do num_visible += 1
 
 		// Interpolate positions (temporary idea)
 		{
@@ -206,13 +200,33 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 			new.vars[.Pos_Y] = next_pos.y
 		}
 	}
+}
 
-	// Presentation
+Present_Ctx :: struct {
+	things:      []Thing,
+	selected_id: ThId,
+	camera:      Camera,
+}
+
+things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
+	out: Tick_Output
+	num_labels := 0
+	num_visible := 0
+
+
+	// Pass #1: Inspection
+	for ix in 1 ..< NUM_THINGS {
+		this := &ctx.things[ix]
+		if len(this.labels[.Name]) != 0 do num_labels += 1
+		if this.vars[.Size] != 0 do num_visible += 1
+	}
+
+
 	out.draw_commands = make([dynamic]Draw_Command, 0, num_visible + num_labels, arena)
 	out.click_boxes = make([dynamic]Click_Box, 0, num_visible, arena)
 
 	for ix in 1 ..< NUM_THINGS {
-		this := &ctx.new_things[ix]
+		this := &ctx.things[ix]
 
 		if this.id == ctx.selected_id {
 			panel: Gui_Selected_Panel
@@ -290,4 +304,3 @@ things_tick :: proc(arena: mem.Allocator, ctx: Tick_Ctx) -> Tick_Output {
 
 	return out
 }
-

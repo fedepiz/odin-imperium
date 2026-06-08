@@ -1,5 +1,7 @@
 package main
 
+import "core:fmt"
+import "core:math"
 import "core:mem"
 
 Camera :: struct {
@@ -21,6 +23,7 @@ Frame_Input :: struct {
 	mouse_clicked:    bool,
 	camera:           Camera_Input,
 	delta:            f32,
+	speed_up:         bool,
 }
 
 Draw_Text_Alignment :: enum {
@@ -81,7 +84,13 @@ Frame_Output :: struct {
 	ui_draw_commands:    []Draw_Command,
 }
 
+Game_Timer :: struct {
+	accumulated: f32,
+	speed:       f32,
+}
+
 Game_State :: struct {
+	timer:       Game_Timer,
 	camera:      Camera,
 	world_graph: World_Graph,
 	tick_num:    u64,
@@ -163,6 +172,7 @@ camera_update :: proc(camera: ^Camera, dtranslate: [2]f32, dzoom: f32, framebuff
 game_init :: proc(world_graph: World_Graph) {
 	ui_init()
 	GAME = {}
+	GAME.timer.speed = 120
 	GAME.camera.world_to_px = 10
 	GAME.camera.zoom = 1
 	GAME.world_graph = world_graph
@@ -248,12 +258,18 @@ game_build_ui :: proc(
 }
 
 update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame_Output {
-	if GAME.tick_num == 0 {
-		GAME.camera.zoom = 4
-		camera_center_on(&GAME.camera, {300, 250}, input.framebuffer_size)
-	}
+	num_ticks: int
 
-	GAME.tick_num += 1
+	{
+		speed_mod: f32 = !input.speed_up ? 1 : 5
+		GAME.timer.accumulated += input.delta * GAME.timer.speed * speed_mod
+		num_ticks = int(math.floor(GAME.timer.accumulated))
+		GAME.timer.accumulated = GAME.timer.accumulated - f32(num_ticks)
+		if GAME.tick_num == 0 {
+			GAME.camera.zoom = 4
+			camera_center_on(&GAME.camera, {300, 250}, input.framebuffer_size)
+		}
+	}
 
 	camera_update(
 		&GAME.camera,
@@ -262,8 +278,9 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 		input.framebuffer_size,
 	)
 
-	tick_result: Tick_Output
-	{
+
+	for tick_idx in 0 ..< num_ticks {
+		GAME.tick_num += 1
 		// Tick here
 		new_things := &GAME.things[GAME.tick_num % 2]
 		old_things := &GAME.things[1 - GAME.tick_num % 2]
@@ -274,25 +291,33 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 			}
 		}
 
-		arena: mem.Arena
-		mem.arena_init(&arena, new_things.blob[:])
+		phase_arena: mem.Arena
+		mem.arena_init(&phase_arena, new_things.blob[:])
 
-		ctx: Tick_Ctx
+		ctx: Sim_Ctx
 		ctx.tick_num = GAME.tick_num
-		ctx.alloc = mem.arena_allocator(&arena)
+		ctx.alloc = mem.arena_allocator(&phase_arena)
 		ctx.old_things = old_things.entries[:]
 		ctx.new_things = new_things.entries[:]
 		ctx.selected_id = GAME.selected_id
-		ctx.camera = GAME.camera
 		ctx.world_graph = GAME.world_graph
 
-		tick_result = things_tick(allocator, ctx)
+		things_simulate(ctx)
+	}
+
+	tick_output: Tick_Output
+	{
+		ctx: Present_Ctx
+		ctx.camera = GAME.camera
+		ctx.selected_id = GAME.selected_id
+		ctx.things = (GAME.things[GAME.tick_num % 2]).entries[:]
+		tick_output = things_present(allocator, ctx)
 	}
 
 	out: Frame_Output
 
-	out.board_draw_commands = tick_result.draw_commands[:]
-	mouse_over_ui := game_build_ui(allocator, &out, input, tick_result.selected_panel)
+	out.board_draw_commands = tick_output.draw_commands[:]
+	mouse_over_ui := game_build_ui(allocator, &out, input, tick_output.selected_panel)
 
 	// Handle on click
 	if !mouse_over_ui && input.mouse_clicked {
@@ -302,7 +327,7 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 			input.framebuffer_size,
 		)
 		picked_id: ThId
-		cbs := tick_result.click_boxes
+		cbs := tick_output.click_boxes
 		for ix in 1 ..= len(cbs) {
 			click_box := cbs[len(cbs) - ix]
 			if rect_contains_point(click_box.bounds, mouse_pos) {
@@ -313,4 +338,3 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 	return out
 }
-

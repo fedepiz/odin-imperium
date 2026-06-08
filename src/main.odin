@@ -1,3 +1,4 @@
+#+private
 package main
 
 import "core:c"
@@ -117,6 +118,7 @@ build_frame_input :: proc(window: glfw.WindowHandle, delta: f32) -> Frame_Input 
 		mouse_pressed    = is_mouse_button_down(glfw.MOUSE_BUTTON_LEFT),
 		mouse_clicked    = is_mouse_button_pressed(glfw.MOUSE_BUTTON_LEFT),
 		delta            = delta,
+		speed_up         = is_key_down(glfw.KEY_LEFT_CONTROL),
 	}
 
 	Action :: struct {
@@ -252,4 +254,3 @@ main :: proc() {
 		end_frame(window)
 	}
 }
-
