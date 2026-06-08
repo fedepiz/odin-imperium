@@ -156,7 +156,6 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 		spatial_map_insert(spatial_map, old.id, pos)
 	}
 
-
 	// "Write pass"
 	for ix in 1 ..< NUM_THINGS {
 		old := ctx.old_things[ix]
@@ -336,7 +335,6 @@ world_graph_cell_of_thing :: proc(ctx: Sim_Ctx, id: ThId) -> World_Cell_Id {
 	pos: [2]int = {int(math.round(vars[.Pos_X])), int(math.round(vars[.Pos_Y]))}
 	return world_graph_pos_to_id(ctx.world_graph, pos)
 }
-
 
 @(private = "file")
 pathfind :: proc(ctx: Sim_Ctx, old: Thing, target: Thing) -> ([2]f32, Nav_Path) {
