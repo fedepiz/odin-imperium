@@ -1,6 +1,5 @@
 package main
 
-import "core:fmt"
 import "core:math"
 import "core:mem"
 import "core:slice"
@@ -87,13 +86,65 @@ FLAG_NAMES := [Flag]string {
 
 Vars :: [Var]f32
 
-Thing :: struct {
+Relation :: enum {
+	HomeOf,
+	FactionOf,
+}
+
+RELATION_NAMES := [Relation]string {
+	.HomeOf    = "HomeOf",
+	.FactionOf = "FactionOf",
+}
+
+Relation_Type :: enum {
+	Forward,
+	Backward,
+}
+
+Reland :: struct {
 	id:       ThId,
-	labels:   [Label]string,
-	vars:     Vars,
-	flags:    bit_set[Flag],
-	path:     Nav_Path,
-	behavior: Behavior,
+	relation: Relation,
+	type:     Relation_Type,
+}
+
+Relations :: [dynamic]Reland
+
+relation_get_one :: proc(
+	thing: Thing,
+	rel: Relation,
+	typ: Relation_Type = .Forward,
+) -> (
+	ThId,
+	bool,
+) #optional_ok {
+	for entry in thing.relations {
+		if entry.relation == rel && entry.type == typ {
+			return entry.id, true
+		}
+	}
+	return {}, false
+}
+
+relation_extract :: proc(
+	out: ^[dynamic]ThId,
+	thing: Thing,
+	rel: Relation,
+	typ: Relation_Type = .Forward,
+) {
+	for entry in thing.relations {
+		if entry.relation == rel && entry.type == typ {
+			append(out, entry.id)
+		}
+	}
+}
+
+Thing :: struct {
+	id:        ThId,
+	labels:    [Label]string,
+	vars:      Vars,
+	flags:     bit_set[Flag],
+	path:      Nav_Path,
+	relations: Relations,
 }
 
 Nav_Path :: struct {
@@ -153,7 +204,6 @@ calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32
 	return current + change
 }
 
-
 CHUNK_SIZE :: 1000
 NUM_CHUNKS :: NUM_THINGS / CHUNK_SIZE
 
@@ -198,6 +248,11 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			new.vars = old.vars
 			new.flags = old.flags
 
+			// The new relations should have twice as much capacity as the length of the old
+			// This is to pre-empt reallocations, at the cost of a bit of memory
+			new.relations = make([dynamic]Reland, 0, len(old.relations) * 2, ctx.alloc)
+			append(&new.relations, ..old.relations[:])
+
 			current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
 			move_to_pos: [2]f32 = current_pos
 
@@ -216,8 +271,6 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			if .IsPerson in new.flags {
 				intent := person_ai(ctx, old, spatial_map)
 
-				new.behavior = intent.behavior
-
 				// Pathfinding towards movement target
 				if thid_is_valid(intent.movement_target) {
 					target := get_thing(ctx, intent.movement_target)
@@ -226,7 +279,6 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 					new.path = cached_path
 				}
 			}
-
 
 			// Interpolate positions (temporary idea)
 			speed: f32 = new.vars[.Size] <= 1 ? 1 : 0
@@ -239,7 +291,6 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 				new.vars[.Pos_X] = next_pos.x
 				new.vars[.Pos_Y] = next_pos.y
 			}
-
 		}
 	}
 }
@@ -543,92 +594,14 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 }
 
 @(private = "file")
-Behavior :: union {
-	Goto,
-	Round_Trip,
-}
-
-@(private = "file")
-Goto :: struct {
-	destination: ThId,
-}
-
-@(private = "file")
-Round_Trip :: struct {
-	source:      ThId,
-	destination: ThId,
-}
-
-@(private = "file")
 Person_Intent :: struct {
-	behavior:        Behavior,
 	movement_target: ThId,
 }
 
 @(private = "file")
 person_ai :: proc(ctx: Sim_Ctx, this: Thing, spatial_map: Spatial_Map) -> Person_Intent {
-	scratch := get_scratch()
-	defer release_scratch(scratch)
-
 	intent: Person_Intent
-
-	// Decide next behavior
-	switch behavior in this.behavior {
-	case nil:
-		if .IsFarmer in this.flags {
-			targets := spatial_map_lookup(scratch.arena, spatial_map, thing_pos(this), 20)
-			start, end: ThId
-			start_flags_inclusion: bit_set[Flag] = {.IsSettlement}
-			start_flags_exclusion: bit_set[Flag] = {.HasMarket, .HasWalls}
-			end_flags: bit_set[Flag] = {.IsSettlement, .HasMarket}
-			for entry in targets {
-				target := get_thing(ctx, entry.id)
-				if start_flags_inclusion < target.flags &&
-				   !(start_flags_exclusion < target.flags) {
-					start = target.id
-				}
-				if end_flags < target.flags {
-					end = target.id
-				}
-			}
-			if start != {} && end != {} {
-				intent.behavior = Round_Trip {
-					source      = start,
-					destination = end,
-				}
-			}
-		}
-	case Goto:
-		target, target_exists := get_thing(ctx, behavior.destination)
-		if !target_exists {
-			intent.behavior = nil
-		} else if thing_pos(this) == thing_pos(target^) {
-			intent.behavior = nil
-		} else {
-			intent.behavior = behavior
-		}
-	case Round_Trip:
-		target, target_exists := get_thing(ctx, behavior.destination)
-		if !target_exists {
-			intent.behavior = nil
-		} else if thing_pos(this) == thing_pos(target^) {
-			intent.behavior = Goto {
-				destination = behavior.source,
-			}
-		} else {
-			intent.behavior = behavior
-		}
-	}
-
-	// Determine movement target from behavior
-	switch behavior in intent.behavior {
-	case Goto:
-		intent.movement_target = behavior.destination
-	case Round_Trip:
-		intent.movement_target = behavior.destination
-	}
-
-
+	// Temporary test functionality
 	if this.labels[.Name] == "Ansoaldus" {
 		// Target thid = 3
 		intent.movement_target = thid_make(3, 1)
@@ -637,6 +610,11 @@ person_ai :: proc(ctx: Sim_Ctx, this: Thing, spatial_map: Spatial_Map) -> Person
 			intent.movement_target = thid_make(4, 1)
 		} else {
 			intent.movement_target = thid_make(2, 1)
+		}
+	} else {
+		home, has_home := relation_get_one(this, .HomeOf, .Backward)
+		if has_home {
+			intent.movement_target = home
 		}
 	}
 	return intent

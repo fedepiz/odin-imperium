@@ -10,6 +10,7 @@ var,Size,3
 flag,IsSettlement
 flag,HasWalls
 flag,HasMarket
+relate,rheged,FactionOf,THIS
 
 spawn,anava
 label,Name,Anava
@@ -17,6 +18,7 @@ var,Pos_X,303
 var,Pos_Y,248
 var,Size,2
 flag,IsSettlement
+relate,rheged,FactionOf,THIS
 
 spawn,llan_heledd
 label,Name,Llan Heledd
@@ -24,6 +26,7 @@ var,Pos_X,290
 var,Pos_Y,260
 var,Size,2
 flag,IsSettlement
+relate,rheged,FactionOf,THIS
 
 spawn,din_drust
 label,Name,Din Drust
@@ -32,6 +35,7 @@ var,Pos_Y,250
 var,Size,2
 flag,HasWalls
 flag,IsSettlement
+relate,rheged,FactionOf,THIS
 
 spawn,ansoaldus
 label,Name,Ansoaldus
@@ -42,6 +46,7 @@ var,Layer,1
 var,VisionRadius,10
 flag,IsPerson
 flag,IsDebug
+relate,rheged,FactionOf,THIS
 
 spawn,raginaldus
 label,Name,Raginwaldus
@@ -52,6 +57,7 @@ var,Layer,1
 var,VisionRadius,10
 flag,IsPerson
 flag,IsDebug
+relate,rheged,FactionOf,THIS
 
 spawn,farmer
 label,Name,Farmer
@@ -63,3 +69,5 @@ var,VisionRadius,10
 flag,IsPerson
 flag,IsFarmer
 flag,IsDebug
+relate,llan_heledd,HomeOf,THIS
+relate,rheged,FactionOf,THIS

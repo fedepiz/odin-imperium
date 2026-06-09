@@ -53,6 +53,17 @@ flag_from_string :: proc(name: string) -> (Flag, bool) {
 }
 
 @(private = "file")
+relation_from_string :: proc(name: string) -> (Relation, bool) {
+	for rel in Relation {
+		if RELATION_NAMES[rel] == name {
+			return rel, true
+		}
+	}
+
+	return {}, false
+}
+
+@(private = "file")
 parse_bool :: proc(text: string) -> (bool, bool) {
 	switch text {
 	case "1", "true", "True", "TRUE", "yes", "Yes", "YES", "on", "On", "ON":
@@ -92,6 +103,30 @@ thing_load_require_current :: proc(
 
 	thing_load_error(path, row_num, "%s requires a current thing", command)
 	return false
+}
+
+@(private = "file")
+thing_load_resolve_id :: proc(
+	ctx: ^Thing_Load_Ctx,
+	path: string,
+	row_num: int,
+	key: string,
+	role: string,
+) -> (ThId, bool) {
+	if key == "THIS" {
+		if ctx.current == nil {
+			thing_load_error(path, row_num, "THIS %s requires a current thing", role)
+			return {}, false
+		}
+		return ctx.current.id, true
+	}
+
+	id, ok := ctx.ids[key]
+	if !ok {
+		thing_load_error(path, row_num, "unknown %s thing key %q", role, key)
+		return {}, false
+	}
+	return id, true
 }
 
 @(private = "file")
@@ -181,6 +216,9 @@ things_setup :: proc(path: string, things: ^Things, persistent_alloc: mem.Alloca
 
 			thing := &things.entries[ctx.next_ix]
 			thing.id = thid_bump_generation(thing.id)
+			thing.relations = make([dynamic]Reland, 0, 0, ctx.thing_alloc) or_else panic(
+				"failed to allocate thing relations",
+			)
 			ctx.ids[row[1]] = thing.id
 			ctx.current = thing
 			ctx.next_ix += 1
@@ -242,6 +280,31 @@ things_setup :: proc(path: string, things: ^Things, persistent_alloc: mem.Alloca
 			} else {
 				ctx.current.flags -= bit_set[Flag]{flag}
 			}
+
+		case "relate":
+			if len(row) != 4 {
+				thing_load_error(path, row_num, "relate expects 3 arguments")
+				return false
+			}
+
+			src_id, src_ok := thing_load_resolve_id(&ctx, path, row_num, row[1], "source")
+			if !src_ok {
+				return false
+			}
+			rel, rel_ok := relation_from_string(row[2])
+			if !rel_ok {
+				thing_load_error(path, row_num, "unknown relation %q", row[2])
+				return false
+			}
+			tgt_id, tgt_ok := thing_load_resolve_id(&ctx, path, row_num, row[3], "target")
+			if !tgt_ok {
+				return false
+			}
+
+			src := &things.entries[thid_parts(src_id).ix]
+			tgt := &things.entries[thid_parts(tgt_id).ix]
+			append(&src.relations, Reland{id = tgt_id, relation = rel, type = .Forward})
+			append(&tgt.relations, Reland{id = src_id, relation = rel, type = .Backward})
 
 		case:
 			thing_load_error(path, row_num, "unknown command %q", row[0])
