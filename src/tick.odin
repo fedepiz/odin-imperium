@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:math"
 import "core:mem"
 import "core:slice"
@@ -63,11 +64,21 @@ VAR_NAMES := [Var]string {
 }
 
 Flag :: enum {
+	IsPerson,
+	IsSettlement,
+	IsFaction,
+	HasWalls,
+	HasMarket,
 	IsDebug,
 }
 
 FLAG_NAMES := [Flag]string {
-	.IsDebug = "IsDebug",
+	.IsDebug      = "IsDebug",
+	.IsPerson     = "IsPerson",
+	.IsSettlement = "IsSettlement",
+	.IsFaction    = "IsFaction",
+	.HasWalls     = "HasWalls",
+	.HasMarket    = "HasMarket",
 }
 
 Vars :: [Var]f32
@@ -175,12 +186,18 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 
 			// Basic copy
 			new.id = old.id
+
+			if !thid_is_valid(new.id) {continue}
+
 			new.labels = old.labels
 			new.vars = old.vars
 			new.flags = old.flags
 
 			current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
 			move_to_pos: [2]f32 = current_pos
+
+			// Determine sprite
+			determine_sprite(new)
 
 			// Detections and nearby
 			detections := spatial_map_lookup(
@@ -232,6 +249,23 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			}
 
 		}
+	}
+}
+
+@(private = "file")
+determine_sprite :: proc(this: ^Thing) {
+	if .IsSettlement in this.flags {
+		sprite := this.labels[.Sprite]
+		sprite = "celtic_village"
+		if .HasMarket in this.flags && .HasWalls in this.flags {
+			sprite = "celtic_town"
+		} else if .HasWalls in this.flags {
+			sprite = "celtic_castle"
+		}
+		this.labels[.Sprite] = sprite
+
+	} else if .IsPerson in this.flags {
+		this.labels[.Sprite] = "soldier"
 	}
 }
 
