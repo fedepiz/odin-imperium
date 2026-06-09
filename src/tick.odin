@@ -199,7 +199,7 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			// Determine sprite
 			determine_sprite(new)
 
-			// Detections and nearby
+			// Detections and nearby collisions
 			detections := spatial_map_lookup(
 				scratch.arena,
 				spatial_map,
@@ -209,7 +209,7 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			)
 
 			{
-				// Resolve movement target
+				// Resolve movement target (debug decision code for now)
 				movement_target: ThId
 				if old.vars[.Size] == 1 {
 					if old.labels[.Name] == "Ansoaldus" {
@@ -225,6 +225,7 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 					}
 				}
 
+				// Pathfinding towards movement target
 				if thid_is_valid(movement_target) {
 					target := get_thing(ctx, movement_target)
 					next_pos, cached_path := pathfind(ctx, old, target^)
