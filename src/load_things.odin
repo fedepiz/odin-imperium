@@ -112,7 +112,10 @@ thing_load_resolve_id :: proc(
 	row_num: int,
 	key: string,
 	role: string,
-) -> (ThId, bool) {
+) -> (
+	ThId,
+	bool,
+) {
 	if key == "THIS" {
 		if ctx.current == nil {
 			thing_load_error(path, row_num, "THIS %s requires a current thing", role)
@@ -154,12 +157,14 @@ thing_load_set_label :: proc(
 	persistent, exists := ctx.persistent_strings[row[2]]
 	if !exists {
 		// Clone to persistent memory and insert
-		persistent = strings.clone(row[2], ctx.persistent_alloc) or_else panic(
-			"failed to allocate persistent thing label",
-		)
-		key := strings.clone(row[2], ctx.pass_alloc) or_else panic(
-			"failed to allocate persistent thing label key",
-		)
+		persistent =
+			strings.clone(row[2], ctx.persistent_alloc) or_else panic(
+				"failed to allocate persistent thing label",
+			)
+		key :=
+			strings.clone(row[2], ctx.pass_alloc) or_else panic(
+				"failed to allocate persistent thing label key",
+			)
 		map_insert(&ctx.persistent_strings, key, persistent)
 	}
 
@@ -216,9 +221,10 @@ things_setup :: proc(path: string, things: ^Things, persistent_alloc: mem.Alloca
 
 			thing := &things.entries[ctx.next_ix]
 			thing.id = thid_bump_generation(thing.id)
-			thing.relations = make([dynamic]Reland, 0, 0, ctx.thing_alloc) or_else panic(
-				"failed to allocate thing relations",
-			)
+			thing.relations =
+				make([dynamic]Reland, 0, 0, ctx.thing_alloc) or_else panic(
+					"failed to allocate thing relations",
+				)
 			ctx.ids[row[1]] = thing.id
 			ctx.current = thing
 			ctx.next_ix += 1

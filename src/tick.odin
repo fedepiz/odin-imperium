@@ -70,6 +70,7 @@ Flag :: enum {
 	IsPlayer,
 	HasWalls,
 	HasMarket,
+	IsInside,
 	IsDebug,
 }
 
@@ -82,6 +83,7 @@ FLAG_NAMES := [Flag]string {
 	.IsFaction    = "IsFaction",
 	.HasWalls     = "HasWalls",
 	.HasMarket    = "HasMarket",
+	.IsInside     = "IsInside",
 }
 
 Vars :: [Var]f32
@@ -89,11 +91,13 @@ Vars :: [Var]f32
 Relation :: enum {
 	HomeOf,
 	FactionOf,
+	ContainerOf,
 }
 
 RELATION_NAMES := [Relation]string {
-	.HomeOf    = "HomeOf",
-	.FactionOf = "FactionOf",
+	.HomeOf      = "HomeOf",
+	.FactionOf   = "FactionOf",
+	.ContainerOf = "ContainerOf",
 }
 
 Relation_Type :: enum {
@@ -184,6 +188,7 @@ lerp :: proc(a: f32, b: f32, t: f32) -> f32 {
 	t := clamp01(t)
 	return a + (b - a) * t
 }
+
 lerp2 :: proc(a: [2]f32, b: [2]f32, t: f32) -> [2]f32 {
 	t := clamp01(t)
 	return a + (b - a) * t
@@ -194,7 +199,7 @@ magnitude :: proc(v: [2]f32) -> f32 {
 }
 
 calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32) -> [2]f32 {
-	BASE_SPEED_MULT :: 0.025
+	BASE_SPEED_MULT :: 0.020
 	speed := speed * BASE_SPEED_MULT
 	if current == destination || speed <= 0 {return current}
 	displacement := destination - current
@@ -224,11 +229,36 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 		32,
 	)
 
+	// Analysis pre-pass
 	for ix in 1 ..< NUM_THINGS {
-		old := ctx.old_things[ix]
-		if !thid_is_valid(old.id) || old.vars[.Size] <= 0 do continue
-		pos := thing_pos(old)
-		spatial_map_insert(spatial_map, old.id, pos)
+		this := ctx.old_things[ix]
+		if !thid_is_valid(this.id) do continue
+		if this.vars[.Size] >= 0 {
+			pos := thing_pos(this)
+			spatial_map_insert(spatial_map, this.id, pos)
+		}
+	}
+
+	Mailbox :: struct {
+		movement_target: ThId,
+	}
+
+	mailboxes: []Mailbox = make([]Mailbox, NUM_THINGS, scratch.arena)
+
+
+	// Information processing pass
+	for ix in 1 ..< NUM_THINGS {
+		this := ctx.old_things[ix]
+		if !thid_is_valid(this.id) do continue
+		if .IsPerson in this.flags {
+			intent := person_ai(ctx, this, spatial_map)
+
+			if intent.enter_target {
+				// What to do?
+			}
+
+			mailboxes[ix].movement_target = intent.movement_target
+		}
 	}
 
 	// "Write pass"
@@ -244,6 +274,8 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 
 			if !thid_is_valid(new.id) {continue}
 
+			mailbox := &mailboxes[ix]
+
 			new.labels = old.labels
 			new.vars = old.vars
 			new.flags = old.flags
@@ -252,9 +284,6 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			// This is to pre-empt reallocations, at the cost of a bit of memory
 			new.relations = make([dynamic]Reland, 0, len(old.relations) * 2, ctx.alloc)
 			append(&new.relations, ..old.relations[:])
-
-			current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
-			move_to_pos: [2]f32 = current_pos
 
 			// Determine sprite
 			determine_sprite(new)
@@ -268,12 +297,12 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 				max(old.vars[.VisionRadius], old.vars[.Size]),
 			)
 
+			current_pos: [2]f32 = {new.vars[.Pos_X], new.vars[.Pos_Y]}
+			move_to_pos: [2]f32 = current_pos
 			if .IsPerson in new.flags {
-				intent := person_ai(ctx, old, spatial_map)
-
 				// Pathfinding towards movement target
-				if thid_is_valid(intent.movement_target) {
-					target := get_thing(ctx, intent.movement_target)
+				if thid_is_valid(mailbox.movement_target) {
+					target := get_thing(ctx, mailbox.movement_target)
 					next_pos, cached_path := pathfind(ctx, old, target^)
 					move_to_pos = next_pos
 					new.path = cached_path
@@ -523,7 +552,7 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 		}
 
 		size := this.vars[.Size]
-		if size > 0 && len(this.labels[.Sprite]) > 0 {
+		if size > 0 && !(.IsInside in this.flags) && len(this.labels[.Sprite]) > 0 {
 			pos_x := this.vars[.Pos_X] - size * 0.5
 			pos_y := this.vars[.Pos_Y] - size * 0.5
 			is_selected := this.id == ctx.selected_id
@@ -596,6 +625,7 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 @(private = "file")
 Person_Intent :: struct {
 	movement_target: ThId,
+	enter_target:    bool,
 }
 
 @(private = "file")
@@ -615,6 +645,9 @@ person_ai :: proc(ctx: Sim_Ctx, this: Thing, spatial_map: Spatial_Map) -> Person
 		home, has_home := relation_get_one(this, .HomeOf, .Backward)
 		if has_home {
 			intent.movement_target = home
+			if thing_pos(this) == thing_pos(get_thing(ctx, home)^) {
+				intent.enter_target = true
+			}
 		}
 	}
 	return intent
