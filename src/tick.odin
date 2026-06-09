@@ -67,6 +67,7 @@ Flag :: enum {
 	IsPerson,
 	IsSettlement,
 	IsFaction,
+	IsPlayer,
 	HasWalls,
 	HasMarket,
 	IsDebug,
@@ -76,6 +77,7 @@ FLAG_NAMES := [Flag]string {
 	.IsDebug      = "IsDebug",
 	.IsPerson     = "IsPerson",
 	.IsSettlement = "IsSettlement",
+	.IsPlayer     = "IsPlayer",
 	.IsFaction    = "IsFaction",
 	.HasWalls     = "HasWalls",
 	.HasMarket    = "HasMarket",
@@ -84,12 +86,11 @@ FLAG_NAMES := [Flag]string {
 Vars :: [Var]f32
 
 Thing :: struct {
-	id:              ThId,
-	labels:          [Label]string,
-	vars:            Vars,
-	flags:           bit_set[Flag],
-	movement_target: ThId,
-	path:            Nav_Path,
+	id:     ThId,
+	labels: [Label]string,
+	vars:   Vars,
+	flags:  bit_set[Flag],
+	path:   Nav_Path,
 }
 
 Nav_Path :: struct {
@@ -208,32 +209,16 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 				max(old.vars[.VisionRadius], old.vars[.Size]),
 			)
 
-			{
-				// Resolve movement target (debug decision code for now)
-				movement_target: ThId
-				if old.vars[.Size] == 1 {
-					if old.labels[.Name] == "Ansoaldus" {
-						// Target thid = 3
-						movement_target = thid_make(3, 1)
-					} else if old.labels[.Name] == "Raginwaldus" {
-						if ctx.tick_num < 500 {
-							movement_target = thid_make(4, 1)
-						} else {
-							movement_target = thid_make(2, 1)
-
-						}
-					}
-				}
+			if .IsPerson in new.flags {
+				intent := person_ai(ctx, old)
 
 				// Pathfinding towards movement target
-				if thid_is_valid(movement_target) {
-					target := get_thing(ctx, movement_target)
+				if thid_is_valid(intent.movement_target) {
+					target := get_thing(ctx, intent.movement_target)
 					next_pos, cached_path := pathfind(ctx, old, target^)
 					move_to_pos = next_pos
 					new.path = cached_path
 				}
-
-				new.movement_target = movement_target
 			}
 
 
@@ -547,3 +532,25 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 	return out
 }
 
+@(private = "file")
+Person_Intent :: struct {
+	movement_target: ThId,
+}
+
+@(private = "file")
+person_ai :: proc(ctx: Sim_Ctx, this: Thing) -> Person_Intent {
+	intent: Person_Intent
+	if this.vars[.Size] == 1 {
+		if this.labels[.Name] == "Ansoaldus" {
+			// Target thid = 3
+			intent.movement_target = thid_make(3, 1)
+		} else if this.labels[.Name] == "Raginwaldus" {
+			if ctx.tick_num < 500 {
+				intent.movement_target = thid_make(4, 1)
+			} else {
+				intent.movement_target = thid_make(2, 1)
+			}
+		}
+	}
+	return intent
+}

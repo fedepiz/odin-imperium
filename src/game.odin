@@ -368,4 +368,3 @@ update_and_render :: proc(allocator: mem.Allocator, input: Frame_Input) -> Frame
 	}
 	return out
 }
-
