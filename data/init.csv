@@ -52,3 +52,14 @@ var,Layer,1
 var,VisionRadius,10
 flag,IsPerson
 flag,IsDebug
+
+spawn,farmer
+label,Name,Farmer
+var,Pos_X,305
+var,Pos_Y,245
+var,Size,1
+var,Layer,1
+var,VisionRadius,10
+flag,IsPerson
+flag,IsFarmer
+flag,IsDebug

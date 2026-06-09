@@ -65,6 +65,7 @@ VAR_NAMES := [Var]string {
 
 Flag :: enum {
 	IsPerson,
+	IsFarmer,
 	IsSettlement,
 	IsFaction,
 	IsPlayer,
@@ -76,6 +77,7 @@ Flag :: enum {
 FLAG_NAMES := [Flag]string {
 	.IsDebug      = "IsDebug",
 	.IsPerson     = "IsPerson",
+	.IsFarmer     = "IsFarmer",
 	.IsSettlement = "IsSettlement",
 	.IsPlayer     = "IsPlayer",
 	.IsFaction    = "IsFaction",
@@ -86,11 +88,12 @@ FLAG_NAMES := [Flag]string {
 Vars :: [Var]f32
 
 Thing :: struct {
-	id:     ThId,
-	labels: [Label]string,
-	vars:   Vars,
-	flags:  bit_set[Flag],
-	path:   Nav_Path,
+	id:       ThId,
+	labels:   [Label]string,
+	vars:     Vars,
+	flags:    bit_set[Flag],
+	path:     Nav_Path,
+	behavior: Behavior,
 }
 
 Nav_Path :: struct {
@@ -117,13 +120,13 @@ Tick_Output :: struct {
 	selected_panel: Gui_Selected_Panel,
 }
 
-get_thing :: proc(ctx: Sim_Ctx, id: ThId) -> ^Thing {
+get_thing :: proc(ctx: Sim_Ctx, id: ThId) -> (^Thing, bool) #optional_ok {
 	if thid_is_valid(id) {
 		parts := thid_parts(id)
 		thing := &ctx.old_things[parts.ix]
-		if thing.id == id {return thing}
+		if thing.id == id {return thing, true}
 	}
-	return &ctx.old_things[0]
+	return &ctx.old_things[0], false
 }
 
 lerp :: proc(a: f32, b: f32, t: f32) -> f32 {
@@ -140,7 +143,8 @@ magnitude :: proc(v: [2]f32) -> f32 {
 }
 
 calculate_next_position :: proc(current: [2]f32, destination: [2]f32, speed: f32) -> [2]f32 {
-	speed := speed * 0.01
+	BASE_SPEED_MULT :: 0.025
+	speed := speed * BASE_SPEED_MULT
 	if current == destination || speed <= 0 {return current}
 	displacement := destination - current
 	dist := magnitude(displacement)
@@ -210,7 +214,9 @@ things_simulate :: proc(ctx: Sim_Ctx) {
 			)
 
 			if .IsPerson in new.flags {
-				intent := person_ai(ctx, old)
+				intent := person_ai(ctx, old, spatial_map)
+
+				new.behavior = intent.behavior
 
 				// Pathfinding towards movement target
 				if thid_is_valid(intent.movement_target) {
@@ -251,7 +257,11 @@ determine_sprite :: proc(this: ^Thing) {
 		this.labels[.Sprite] = sprite
 
 	} else if .IsPerson in this.flags {
-		this.labels[.Sprite] = "soldier"
+		if .IsFarmer in this.flags {
+			this.labels[.Sprite] = "person"
+		} else {
+			this.labels[.Sprite] = "soldier"
+		}
 	}
 }
 
@@ -533,23 +543,100 @@ things_present :: proc(arena: mem.Allocator, ctx: Present_Ctx) -> Tick_Output {
 }
 
 @(private = "file")
+Behavior :: union {
+	Goto,
+	Round_Trip,
+}
+
+@(private = "file")
+Goto :: struct {
+	destination: ThId,
+}
+
+@(private = "file")
+Round_Trip :: struct {
+	source:      ThId,
+	destination: ThId,
+}
+
+@(private = "file")
 Person_Intent :: struct {
+	behavior:        Behavior,
 	movement_target: ThId,
 }
 
 @(private = "file")
-person_ai :: proc(ctx: Sim_Ctx, this: Thing) -> Person_Intent {
+person_ai :: proc(ctx: Sim_Ctx, this: Thing, spatial_map: Spatial_Map) -> Person_Intent {
+	scratch := get_scratch()
+	defer release_scratch(scratch)
+
 	intent: Person_Intent
-	if this.vars[.Size] == 1 {
-		if this.labels[.Name] == "Ansoaldus" {
-			// Target thid = 3
-			intent.movement_target = thid_make(3, 1)
-		} else if this.labels[.Name] == "Raginwaldus" {
-			if ctx.tick_num < 500 {
-				intent.movement_target = thid_make(4, 1)
-			} else {
-				intent.movement_target = thid_make(2, 1)
+
+	// Decide next behavior
+	switch behavior in this.behavior {
+	case nil:
+		if .IsFarmer in this.flags {
+			targets := spatial_map_lookup(scratch.arena, spatial_map, thing_pos(this), 20)
+			start, end: ThId
+			start_flags_inclusion: bit_set[Flag] = {.IsSettlement}
+			start_flags_exclusion: bit_set[Flag] = {.HasMarket, .HasWalls}
+			end_flags: bit_set[Flag] = {.IsSettlement, .HasMarket}
+			for entry in targets {
+				target := get_thing(ctx, entry.id)
+				if start_flags_inclusion < target.flags &&
+				   !(start_flags_exclusion < target.flags) {
+					start = target.id
+				}
+				if end_flags < target.flags {
+					end = target.id
+				}
 			}
+			if start != {} && end != {} {
+				intent.behavior = Round_Trip {
+					source      = start,
+					destination = end,
+				}
+			}
+		}
+	case Goto:
+		target, target_exists := get_thing(ctx, behavior.destination)
+		if !target_exists {
+			intent.behavior = nil
+		} else if thing_pos(this) == thing_pos(target^) {
+			intent.behavior = nil
+		} else {
+			intent.behavior = behavior
+		}
+	case Round_Trip:
+		target, target_exists := get_thing(ctx, behavior.destination)
+		if !target_exists {
+			intent.behavior = nil
+		} else if thing_pos(this) == thing_pos(target^) {
+			intent.behavior = Goto {
+				destination = behavior.source,
+			}
+		} else {
+			intent.behavior = behavior
+		}
+	}
+
+	// Determine movement target from behavior
+	switch behavior in intent.behavior {
+	case Goto:
+		intent.movement_target = behavior.destination
+	case Round_Trip:
+		intent.movement_target = behavior.destination
+	}
+
+
+	if this.labels[.Name] == "Ansoaldus" {
+		// Target thid = 3
+		intent.movement_target = thid_make(3, 1)
+	} else if this.labels[.Name] == "Raginwaldus" {
+		if ctx.tick_num < 500 {
+			intent.movement_target = thid_make(4, 1)
+		} else {
+			intent.movement_target = thid_make(2, 1)
 		}
 	}
 	return intent
